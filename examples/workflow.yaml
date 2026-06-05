@@ -1,0 +1,62 @@
+apiVersion: serverless.minik8s.io/v1alpha1
+kind: Function
+metadata:
+  name: classify
+  namespace: default
+spec:
+  runtime: Python
+  handler: handler
+  source:
+    inline: |
+      def handler(event, context):
+          text = (event or {}).get("text", "")
+          if "image" in text.lower():
+              return {"route": "image", "text": text}
+          return {"route": "text", "text": text}
+---
+apiVersion: serverless.minik8s.io/v1alpha1
+kind: Function
+metadata:
+  name: handle-text
+  namespace: default
+spec:
+  runtime: Python
+  handler: handler
+  source:
+    inline: |
+      def handler(event, context):
+          return {"handledBy": "text", "summary": (event or {}).get("text", "")[:32]}
+---
+apiVersion: serverless.minik8s.io/v1alpha1
+kind: Function
+metadata:
+  name: handle-image
+  namespace: default
+spec:
+  runtime: Python
+  handler: handler
+  source:
+    inline: |
+      def handler(event, context):
+          return {"handledBy": "image", "description": "simulated image workload"}
+---
+apiVersion: serverless.minik8s.io/v1alpha1
+kind: Workflow
+metadata:
+  name: media-router
+  namespace: default
+spec:
+  entrypoint: classify
+  steps:
+    classify:
+      function: classify
+      branches:
+        - when:
+            field: route
+            equals: image
+          next: image
+      next: text
+    text:
+      function: handle-text
+    image:
+      function: handle-image

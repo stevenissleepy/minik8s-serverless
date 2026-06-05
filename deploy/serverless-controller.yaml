@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: serverless-controller
+  namespace: kube-system
+  labels:
+    component: serverless-controller
+spec:
+  hostNetwork: true
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  containers:
+    - name: serverless-controller
+      image: stevenissleepy/serverless-controller:latest
+      command:
+        - serverless-controller
+      args:
+        - --api-server=http://127.0.0.1:8080
+        - --bind=0.0.0.0:8082
+        - --python-bin=python3
+      ports:
+        - containerPort: 8082
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: serverless-controller
+  namespace: kube-system
+spec:
+  type: NodePort
+  selector:
+    matchLabels:
+      component: serverless-controller
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
+      nodePort: 30082
+      protocol: TCP

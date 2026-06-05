@@ -1,0 +1,22 @@
+[package]
+name = "serverless-controller"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "serverless-controller"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+apimachinery = { path = "../../../lib/apimachinery" }
+axum = "0.7"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+client-rs = { path = "../../../lib/client-rs" }
+logger = { path = "../../../lib/logger" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serverless-api = { path = "../api" }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
+tracing = "0.1"
