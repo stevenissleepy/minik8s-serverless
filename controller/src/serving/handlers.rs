@@ -90,11 +90,11 @@ pub(crate) async fn invoke_function_inner(
 ) -> HttpResult<InvokeResponse> {
     let service = load_service(state, namespace, name).await?;
 
-    let started = state.runtime.begin(&service);
+    let (started, in_flight) = state.runtime.begin(&service);
     patch_service_runtime_status(state, &service, &started, None).await;
 
     let result = invoke_service_pod(state, &service, input, started.active_instances).await;
-    let finished = state.runtime.end(&service);
+    let finished = in_flight.finish();
     match result {
         Ok(result) => {
             patch_service_runtime_status(state, &service, &finished, None).await;

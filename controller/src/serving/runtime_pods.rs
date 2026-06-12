@@ -319,8 +319,11 @@ async fn update_revision_status(
     }
 }
 
+// 冷启动等待上限，对齐 Knative revision timeoutSeconds 的默认值。
+const STARTUP_TIMEOUT_SECONDS: u64 = 300;
+
 async fn ensure_ready_service_pod(state: &AppState, service: &ServerlessService) -> Result<Pod> {
-    for _ in 0..60 {
+    for _ in 0..STARTUP_TIMEOUT_SECONDS * 2 {
         let mut pods = ready_service_pods(state, service).await?;
         if !pods.is_empty() {
             let index = pod_pick_index(pods.len());
@@ -334,7 +337,7 @@ async fn ensure_ready_service_pod(state: &AppState, service: &ServerlessService)
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     Err(anyhow!(
-        "timed out waiting for ServerlessService {}/{} pod",
+        "timed out waiting for ServerlessService {}/{} pod after {STARTUP_TIMEOUT_SECONDS}s",
         object_namespace(&service.metadata),
         service.metadata.name
     ))

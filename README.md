@@ -63,6 +63,18 @@ kn service create hello \
 
 这种方式会跳过 Function 层，不构建源码，直接把已有 image 交给 Serving 层运行。
 
+## 扩缩容配置
+
+`spec.scale` 支持以下字段（`func.yaml` 的 `scale` 与之一一对应）：
+
+| 字段 | 默认 | 含义 |
+|------|------|------|
+| `minScale` | 0 | 最低实例数；0 表示空闲时缩容到零 |
+| `maxScale` | 10 | 并发扩容的实例上限 |
+| `idleSeconds` | 60 | 无请求多少秒后缩回 `minScale` |
+
+冷启动时网关等待 Pod 就绪的上限固定为 300 秒（对齐 Knative revision `timeoutSeconds` 的默认值），足够覆盖加载模型权重这类慢启动函数；调用方的客户端超时要按函数实际冷启动时长设置。
+
 ## 调用函数
 
 ```sh

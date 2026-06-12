@@ -25,13 +25,13 @@ pub(crate) struct RuntimeSnapshot {
 }
 
 impl RuntimeRegistry {
-    pub(crate) fn begin(&self, service: &ServerlessService) -> RuntimeSnapshot {
+    pub(crate) fn begin(&self, service: &ServerlessService) -> (RuntimeSnapshot, InFlightGuard) {
         let key = service_key(service);
         let mut guard = self
             .inner
             .write()
             .unwrap_or_else(|error| error.into_inner());
-        let entry = guard.entry(key).or_insert_with(|| RuntimeEntry {
+        let entry = guard.entry(key.clone()).or_insert_with(|| RuntimeEntry {
             active_instances: service.spec.scale.min_scale,
             in_flight: 0,
             last_used: Instant::now(),
@@ -53,23 +53,32 @@ impl RuntimeRegistry {
         }
         entry.in_flight += 1;
         entry.last_used = Instant::now();
-        RuntimeSnapshot {
+        let snapshot = RuntimeSnapshot {
             active_instances: entry.active_instances,
             in_flight: entry.in_flight,
-        }
+        };
+        (
+            snapshot,
+            InFlightGuard {
+                registry: self.clone(),
+                key,
+                armed: true,
+            },
+        )
     }
 
-    pub(crate) fn end(&self, service: &ServerlessService) -> RuntimeSnapshot {
-        let key = service_key(service);
+    fn end_by_key(&self, key: &str) -> RuntimeSnapshot {
         let mut guard = self
             .inner
             .write()
             .unwrap_or_else(|error| error.into_inner());
-        let entry = guard.entry(key).or_insert_with(|| RuntimeEntry {
-            active_instances: service.spec.scale.min_scale,
-            in_flight: 0,
-            last_used: Instant::now(),
-        });
+        let entry = guard
+            .entry(key.to_string())
+            .or_insert_with(|| RuntimeEntry {
+                active_instances: 0,
+                in_flight: 0,
+                last_used: Instant::now(),
+            });
         entry.in_flight = entry.in_flight.saturating_sub(1);
         entry.last_used = Instant::now();
         RuntimeSnapshot {
@@ -138,6 +147,30 @@ impl RuntimeRegistry {
                 active_instances: 0,
                 in_flight: 0,
             },
+        }
+    }
+}
+
+/// 持有一次进行中的调用：要么通过 `finish()` 正常结束，要么在 handler 被
+/// 取消（如客户端断连导致 axum drop 掉 future）时由 `Drop` 兜底递减
+/// in_flight，避免计数泄漏导致 scale-to-zero 永久失效。
+pub(crate) struct InFlightGuard {
+    registry: RuntimeRegistry,
+    key: String,
+    armed: bool,
+}
+
+impl InFlightGuard {
+    pub(crate) fn finish(mut self) -> RuntimeSnapshot {
+        self.armed = false;
+        self.registry.end_by_key(&self.key)
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            self.registry.end_by_key(&self.key);
         }
     }
 }
