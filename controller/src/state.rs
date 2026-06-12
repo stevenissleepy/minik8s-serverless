@@ -1,32 +1,54 @@
 use apimachinery::{DEFAULT_NAMESPACE, Resource};
 use client_rs::{Client, Store, TypedApi};
-use serverless_api::{EventTrigger, Function, Workflow};
+use serverless_api::{EventTrigger, ServerlessService, Workflow};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::http::{HttpResult, api_error};
-use crate::runtime::RuntimeRegistry;
+use crate::serving::RuntimeRegistry;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
     pub(crate) client: Client,
-    pub(crate) functions: Store<Function>,
+    pub(crate) services: Store<ServerlessService>,
     pub(crate) triggers: Store<EventTrigger>,
     pub(crate) workflows: Store<Workflow>,
     pub(crate) runtime: RuntimeRegistry,
-    pub(crate) python_bin: String,
+    pub(crate) runtime_pod_locks: RuntimePodLocks,
 }
 
-pub(crate) async fn load_function(
+#[derive(Clone, Default)]
+pub(crate) struct RuntimePodLocks {
+    inner: Arc<Mutex<BTreeMap<String, Arc<Mutex<()>>>>>,
+}
+
+impl RuntimePodLocks {
+    pub(crate) async fn lock_for(&self, key: String) -> Arc<Mutex<()>> {
+        let mut locks = self.inner.lock().await;
+        locks
+            .entry(key)
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+}
+
+pub(crate) async fn load_service(
     state: &AppState,
     namespace: &str,
     name: &str,
-) -> HttpResult<Function> {
-    if let Some(function) = find_namespaced(&state.functions, namespace, name) {
-        return Ok(function);
+) -> HttpResult<ServerlessService> {
+    if let Some(service) = find_namespaced(&state.services, namespace, name) {
+        return Ok(service);
     }
-    TypedApi::<Function>::namespaced(state.client.clone(), namespace.to_string())
+    TypedApi::<ServerlessService>::namespaced(state.client.clone(), namespace.to_string())
         .get(name)
         .await
-        .map_err(|error| api_error(format!("Function {namespace}/{name} not found: {error}")))
+        .map_err(|error| {
+            api_error(format!(
+                "ServerlessService {namespace}/{name} not found: {error}"
+            ))
+        })
 }
 
 pub(crate) async fn load_workflow(

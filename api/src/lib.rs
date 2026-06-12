@@ -1,13 +1,15 @@
 pub mod eventtrigger;
-pub mod function;
+pub mod revision;
+pub mod service;
 pub mod workflow;
 
 pub use eventtrigger::{
     EventTrigger, EventTriggerSpec, EventTriggerStatus, TriggerTarget, TriggerTargetKind,
 };
-pub use function::{
-    Function, FunctionConcurrency, FunctionRuntime, FunctionScale, FunctionSource, FunctionSpec,
-    FunctionStatus,
+pub use revision::{Revision, RevisionSpec, RevisionStatus};
+pub use service::{
+    ServerlessConcurrency, ServerlessScale, ServerlessService, ServerlessServiceSpec,
+    ServerlessServiceStatus,
 };
 pub use workflow::{
     BranchCondition, Workflow, WorkflowBranch, WorkflowSpec, WorkflowStatus, WorkflowStep,

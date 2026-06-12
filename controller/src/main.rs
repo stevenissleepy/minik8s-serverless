@@ -1,23 +1,20 @@
+mod eventing;
 mod handlers;
 mod http;
 mod informer;
-mod python;
-mod runtime;
-mod scale;
+mod serving;
 mod state;
 mod status;
-mod workflow;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use client_rs::{Client, ListParams, TypedApi};
-use serverless_api::{EventTrigger, Function, Workflow};
+use serverless_api::{EventTrigger, Revision, ServerlessService, Workflow};
 use std::net::SocketAddr;
 use std::time::Duration;
 
 use crate::informer::{log_informer_event, wait_for_informers};
-use crate::runtime::RuntimeRegistry;
-use crate::scale::idle_scale_loop;
+use crate::serving::{RuntimeRegistry, idle_scale_loop, reconcile_loop};
 use crate::state::AppState;
 
 #[derive(Debug, Parser)]
@@ -29,11 +26,11 @@ struct Args {
     #[arg(long, default_value = "0.0.0.0:8082")]
     bind: SocketAddr,
 
-    #[arg(long, default_value = "python3")]
-    python_bin: String,
-
     #[arg(long, default_value_t = 5)]
     idle_check_secs: u64,
+
+    #[arg(long, default_value_t = 2)]
+    reconcile_secs: u64,
 }
 
 fn main() {
@@ -61,10 +58,15 @@ async fn run() -> Result<()> {
         None => Client::from_env()?,
     };
 
-    let functions = client_rs::spawn_informer::<Function, _>(
-        TypedApi::<Function>::all(client.clone()),
+    let services = client_rs::spawn_informer::<ServerlessService, _>(
+        TypedApi::<ServerlessService>::all(client.clone()),
         ListParams::default(),
-        log_informer_event::<Function>("function"),
+        log_informer_event::<ServerlessService>("serverlessservice"),
+    );
+    let revisions = client_rs::spawn_informer::<Revision, _>(
+        TypedApi::<Revision>::all(client.clone()),
+        ListParams::default(),
+        log_informer_event::<Revision>("revision"),
     );
     let triggers = client_rs::spawn_informer::<EventTrigger, _>(
         TypedApi::<EventTrigger>::all(client.clone()),
@@ -76,19 +78,23 @@ async fn run() -> Result<()> {
         ListParams::default(),
         log_informer_event::<Workflow>("workflow"),
     );
-    wait_for_informers(&functions, &triggers, &workflows).await;
+    wait_for_informers(&services, &revisions, &triggers, &workflows).await;
 
     let state = AppState {
         client,
-        functions: functions.store.clone(),
+        services: services.store.clone(),
         triggers: triggers.store.clone(),
         workflows: workflows.store.clone(),
         runtime: RuntimeRegistry::default(),
-        python_bin: args.python_bin,
+        runtime_pod_locks: Default::default(),
     };
     let idle_state = state.clone();
     tokio::spawn(async move {
         idle_scale_loop(idle_state, Duration::from_secs(args.idle_check_secs)).await;
+    });
+    let reconcile_state = state.clone();
+    tokio::spawn(async move {
+        reconcile_loop(reconcile_state, Duration::from_secs(args.reconcile_secs)).await;
     });
 
     let app = handlers::routes().with_state(state);

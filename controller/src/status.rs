@@ -1,43 +1,45 @@
 use chrono::Utc;
 use client_rs::TypedApi;
 use serverless_api::{
-    EventTrigger, EventTriggerStatus, Function, FunctionStatus, Workflow, WorkflowStatus,
+    EventTrigger, EventTriggerStatus, ServerlessService, ServerlessServiceStatus, Workflow,
+    WorkflowStatus,
 };
 
-use crate::runtime::RuntimeSnapshot;
+use crate::serving::runtime::RuntimeSnapshot;
+use crate::serving::runtime_pods::service_status;
 use crate::state::{AppState, object_namespace};
 
-pub(crate) async fn patch_function_runtime_status(
+pub(crate) async fn patch_service_runtime_status(
     state: &AppState,
-    function: &Function,
+    service: &ServerlessService,
     snapshot: &RuntimeSnapshot,
     last_error: Option<String>,
 ) {
-    let namespace = object_namespace(&function.metadata);
-    update_function_status(
+    let namespace = object_namespace(&service.metadata);
+    update_service_status(
         state,
         &namespace,
-        &function.metadata.name,
-        FunctionStatus {
-            ready: function.spec.source.inline.is_some(),
-            active_instances: snapshot.active_instances,
-            in_flight: snapshot.in_flight,
-            last_invoked_at: Some(Utc::now()),
+        &service.metadata.name,
+        service_status(
+            service,
+            snapshot.active_instances,
+            snapshot.in_flight,
             last_error,
-        },
+        ),
     )
     .await;
 }
 
-pub(crate) async fn update_function_status(
+pub(crate) async fn update_service_status(
     state: &AppState,
     namespace: &str,
     name: &str,
-    status: FunctionStatus,
+    status: ServerlessServiceStatus,
 ) {
-    let api = TypedApi::<Function>::namespaced(state.client.clone(), namespace.to_string());
+    let api =
+        TypedApi::<ServerlessService>::namespaced(state.client.clone(), namespace.to_string());
     if let Err(error) = api.replace_status(name, &status).await {
-        tracing::warn!(namespace, name, error = %error, "failed to update function status");
+        tracing::warn!(namespace, name, error = %error, "failed to update ServerlessService status");
     }
 }
 

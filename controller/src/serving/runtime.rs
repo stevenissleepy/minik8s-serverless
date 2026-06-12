@@ -1,5 +1,5 @@
 use serde::Serialize;
-use serverless_api::Function;
+use serverless_api::ServerlessService;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -25,26 +25,26 @@ pub(crate) struct RuntimeSnapshot {
 }
 
 impl RuntimeRegistry {
-    pub(crate) fn begin(&self, function: &Function) -> RuntimeSnapshot {
-        let key = function_key(function);
+    pub(crate) fn begin(&self, service: &ServerlessService) -> RuntimeSnapshot {
+        let key = service_key(service);
         let mut guard = self
             .inner
             .write()
             .unwrap_or_else(|error| error.into_inner());
         let entry = guard.entry(key).or_insert_with(|| RuntimeEntry {
-            active_instances: function.spec.scale.min_instances,
+            active_instances: service.spec.scale.min_scale,
             in_flight: 0,
             last_used: Instant::now(),
         });
         if entry.active_instances == 0 {
             entry.active_instances = 1;
         }
-        let target = function.spec.concurrency.target.max(1);
-        let max_instances = function
+        let target = service.spec.concurrency.target.max(1);
+        let max_instances = service
             .spec
             .scale
-            .max_instances
-            .max(function.spec.scale.min_instances)
+            .max_scale
+            .max(service.spec.scale.min_scale)
             .max(1);
         if entry.in_flight >= entry.active_instances.saturating_mul(target)
             && entry.active_instances < max_instances
@@ -59,14 +59,14 @@ impl RuntimeRegistry {
         }
     }
 
-    pub(crate) fn end(&self, function: &Function) -> RuntimeSnapshot {
-        let key = function_key(function);
+    pub(crate) fn end(&self, service: &ServerlessService) -> RuntimeSnapshot {
+        let key = service_key(service);
         let mut guard = self
             .inner
             .write()
             .unwrap_or_else(|error| error.into_inner());
         let entry = guard.entry(key).or_insert_with(|| RuntimeEntry {
-            active_instances: function.spec.scale.min_instances,
+            active_instances: service.spec.scale.min_scale,
             in_flight: 0,
             last_used: Instant::now(),
         });
@@ -78,18 +78,46 @@ impl RuntimeRegistry {
         }
     }
 
-    pub(crate) fn scale_idle(&self, function: &Function) -> Option<RuntimeSnapshot> {
-        let key = function_key(function);
+    pub(crate) fn scale_idle(&self, service: &ServerlessService) -> Option<RuntimeSnapshot> {
+        let key = service_key(service);
         let mut guard = self
             .inner
             .write()
             .unwrap_or_else(|error| error.into_inner());
         let entry = guard.get_mut(&key)?;
-        let min_instances = function.spec.scale.min_instances;
+        let min_instances = service.spec.scale.min_scale;
         if entry.in_flight == 0
             && entry.active_instances > min_instances
-            && entry.last_used.elapsed() >= Duration::from_secs(function.spec.scale.idle_seconds)
+            && entry.last_used.elapsed() >= Duration::from_secs(service.spec.scale.idle_seconds)
         {
+            entry.active_instances = min_instances;
+            return Some(RuntimeSnapshot {
+                active_instances: entry.active_instances,
+                in_flight: entry.in_flight,
+            });
+        }
+        None
+    }
+
+    pub(crate) fn ensure_min_instances(
+        &self,
+        service: &ServerlessService,
+    ) -> Option<RuntimeSnapshot> {
+        let min_instances = service.spec.scale.min_scale;
+        if min_instances == 0 {
+            return None;
+        }
+        let key = service_key(service);
+        let mut guard = self
+            .inner
+            .write()
+            .unwrap_or_else(|error| error.into_inner());
+        let entry = guard.entry(key).or_insert_with(|| RuntimeEntry {
+            active_instances: 0,
+            in_flight: 0,
+            last_used: Instant::now(),
+        });
+        if entry.active_instances < min_instances {
             entry.active_instances = min_instances;
             return Some(RuntimeSnapshot {
                 active_instances: entry.active_instances,
@@ -114,11 +142,8 @@ impl RuntimeRegistry {
     }
 }
 
-pub(crate) fn function_key(function: &Function) -> String {
-    runtime_key(
-        &object_namespace(&function.metadata),
-        &function.metadata.name,
-    )
+pub(crate) fn service_key(service: &ServerlessService) -> String {
+    runtime_key(&object_namespace(&service.metadata), &service.metadata.name)
 }
 
 pub(crate) fn runtime_key(namespace: &str, name: &str) -> String {

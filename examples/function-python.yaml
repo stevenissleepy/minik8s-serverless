@@ -1,27 +1,16 @@
 apiVersion: serverless.minik8s.io/v1alpha1
-kind: Function
+kind: ServerlessService
 metadata:
   name: sentiment
   namespace: default
 spec:
-  runtime: Python
-  handler: handler
-  source:
-    inline: |
-      def handler(event, context):
-          text = (event or {}).get("text", "")
-          score = 1 if "good" in text.lower() else -1
-          return {
-              "text": text,
-              "label": "positive" if score > 0 else "negative",
-              "score": score,
-              "function": context["name"],
-          }
+  image: stevenissleepy/sentiment:latest
+  port: 8080
   concurrency:
     target: 8
   scale:
-    minInstances: 0
-    maxInstances: 4
+    minScale: 0
+    maxScale: 4
     idleSeconds: 30
 ---
 apiVersion: serverless.minik8s.io/v1alpha1
