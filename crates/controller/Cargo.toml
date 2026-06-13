@@ -9,14 +9,14 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-apimachinery = { path = "../../../lib/apimachinery" }
+apimachinery = { path = "../../../../lib/apimachinery" }
 axum = "0.7"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 cron = "0.12"
-client-rs = { path = "../../../lib/client-rs" }
-api = { path = "../../../lib/api" }
-logger = { path = "../../../lib/logger" }
+client-rs = { path = "../../../../lib/client-rs" }
+api = { path = "../../../../lib/api" }
+logger = { path = "../../../../lib/logger" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"

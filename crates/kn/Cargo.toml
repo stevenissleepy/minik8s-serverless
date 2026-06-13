@@ -9,9 +9,9 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-apimachinery = { path = "../../../lib/apimachinery" }
+apimachinery = { path = "../../../../lib/apimachinery" }
 clap = { version = "4", features = ["derive"] }
-client-rs = { path = "../../../lib/client-rs" }
+client-rs = { path = "../../../../lib/client-rs" }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 serverless-api = { path = "../api" }

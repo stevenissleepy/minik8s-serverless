@@ -1,0 +1,27 @@
+apiVersion: serverless.minik8s.io/v1alpha1
+kind: Workflow
+metadata:
+  name: ticket-router
+  namespace: default
+spec:
+  entrypoint: classify
+  steps:
+    classify:
+      function: ticket-classify
+      next: score
+    score:
+      function: risk-score
+      branches:
+        - when:
+            field: decision
+            equals: human
+          next: human
+      next: auto
+    auto:
+      function: auto-reply
+      next: notify
+    human:
+      function: human-escalate
+      next: notify
+    notify:
+      function: notify

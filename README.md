@@ -106,7 +106,7 @@ curl -s http://127.0.0.1:8082/api/v1/events/comment.created \
   -d '{"text":"good comment"}'
 ```
 
-完整的「定时源 + 文件源 + Trigger」示例见 [`examples/event-source.yaml`](examples/event-source.yaml)：apply 之后不需要手动调用，函数会被自动触发，`kubectl get eventsource -o wide` 可以看到 `eventCount` / `lastEventAt` 增长。
+复杂应用中的 Trigger 示例见 [`examples/exp-ticket-support/event-trigger.yaml`](examples/exp-ticket-support/event-trigger.yaml)。
 
 ## 查看状态
 

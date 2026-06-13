@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
-apimachinery = { path = "../../../lib/apimachinery" }
+apimachinery = { path = "../../../../lib/apimachinery" }
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

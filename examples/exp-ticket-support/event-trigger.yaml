@@ -1,0 +1,10 @@
+apiVersion: serverless.minik8s.io/v1alpha1
+kind: EventTrigger
+metadata:
+  name: ticket-created
+  namespace: default
+spec:
+  eventType: ticket.created
+  target:
+    kind: Workflow
+    name: ticket-router

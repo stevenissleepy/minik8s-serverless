@@ -12,14 +12,3 @@ spec:
     minScale: 0
     maxScale: 4
     idleSeconds: 30
----
-apiVersion: serverless.minik8s.io/v1alpha1
-kind: EventTrigger
-metadata:
-  name: sentiment-on-comment
-  namespace: default
-spec:
-  eventType: comment.created
-  target:
-    kind: Function
-    name: sentiment
