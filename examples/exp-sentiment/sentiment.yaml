@@ -1,10 +1,10 @@
 apiVersion: serverless.minik8s.io/v1alpha1
 kind: ServerlessService
 metadata:
-  name: sentiment
+  name: sentiment-it
   namespace: default
 spec:
-  image: stevenissleepy/sentiment:latest
+  image: stevenissleepy/sentiment-it:latest
   port: 8080
   concurrency:
     target: 8

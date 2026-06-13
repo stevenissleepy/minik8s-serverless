@@ -39,8 +39,8 @@ Serving 层直接使用已有镜像，不经过 Function 层。
 ```sh
 CONTROL_PLANE=<control-plane-ip>
 
-kn service create sentiment \
-  --image stevenissleepy/sentiment:latest \
+kn service create sentiment-it \
+  --image stevenissleepy/sentiment-it:latest \
   --port 8080 \
   --api-server http://$CONTROL_PLANE:8080
 ```
@@ -50,7 +50,7 @@ kn service create sentiment \
 调用函数：
 
 ```sh
-curl -s http://$CONTROL_PLANE:30082/api/v1/namespaces/default/services/sentiment/invoke \
+curl -s http://$CONTROL_PLANE:30082/api/v1/namespaces/default/services/sentiment-it/invoke \
   -H 'content-type: application/json' \
   -d '{"text":"good image"}' | jq
 ```
@@ -61,28 +61,29 @@ curl -s http://$CONTROL_PLANE:30082/api/v1/namespaces/default/services/sentiment
 kubectl get serverlessservices
 kubectl get revisions
 kubectl get service
-kubectl get pods -l serverless.minik8s.io/service=sentiment -o wide
-curl -s http://$CONTROL_PLANE:30082/api/v1/namespaces/default/services/sentiment/state | jq
+kubectl get pods -l serverless.minik8s.io/service=sentiment-it -o wide
+curl -s http://$CONTROL_PLANE:30082/api/v1/namespaces/default/services/sentiment-it/state | jq
 ```
 
 期望：
 
 - 返回 JSON 中 `.result.label` 为 `positive`。
-- controller 创建了 `Revision/sentiment-*`、`Service/sks-sentiment` 和 `sks-sentiment-*` runtime Pod。
+- controller 创建了 `Revision/sentiment-it-*`、`Service/sks-sentiment-it` 和 `sks-sentiment-it-*` runtime Pod。
 - 每个 `ServerlessService` 的用户函数运行在独立 runtime Pod 中。
 
 ## Function 层
 
-Function 层从本地 Python 函数目录上传函数。需要一个各节点都能 pull 的 `<registry>`。
+Function 层从本地 Python 函数目录上传函数。这里固定使用
+`stevenissleepy/sentiment-it:latest` 镜像。
 
 ```sh
 CONTROL_PLANE=<control-plane-ip>
-REGISTRY=<registry>
+REGISTRY=stevenissleepy
 
-rm -rf sentiment
-kn func create -l python sentiment
-cp crates/plugin/serverless/examples/exp-sentiment/sentiment.py sentiment/function/func.py
-kn func deploy sentiment --registry $REGISTRY --api-server http://$CONTROL_PLANE:8080
+rm -rf sentiment-it
+kn func create -l python sentiment-it
+cp crates/plugin/serverless/examples/exp-sentiment/sentiment.py sentiment-it/function/func.py
+kn func deploy sentiment-it --registry $REGISTRY --api-server http://$CONTROL_PLANE:8080
 ```
 
 查看上传后的函数：
@@ -90,14 +91,14 @@ kn func deploy sentiment --registry $REGISTRY --api-server http://$CONTROL_PLANE
 ```sh
 kubectl get serverlessservices
 kubectl get revisions
-curl -s http://$CONTROL_PLANE:8080/apis/serverless.minik8s.io/v1alpha1/namespaces/default/serverlessservices/sentiment | jq '.spec, .status'
+curl -s http://$CONTROL_PLANE:8080/apis/serverless.minik8s.io/v1alpha1/namespaces/default/serverlessservices/sentiment-it | jq '.spec, .status'
 ```
 
 期望：
 
 - `kn func create -l python` 能创建 Python 函数模板。
-- `kn func deploy` 创建或更新 `ServerlessService/sentiment`。
-- `ServerlessService/sentiment` 的 `spec.image` 是 `$REGISTRY/sentiment:latest`。
+- `kn func deploy` 创建或更新 `ServerlessService/sentiment-it`。
+- `ServerlessService/sentiment-it` 的 `spec.image` 是 `stevenissleepy/sentiment-it:latest`。
 
 ## 集成测试
 
@@ -107,7 +108,7 @@ scale-to-zero。
 
 ```sh
 CONTROL_PLANE=<control-plane-ip>
-REGISTRY=<registry>
+REGISTRY=stevenissleepy
 
 kubectl get nodes -o wide
 kubectl get pods -A -o wide
@@ -137,7 +138,7 @@ kubectl get pods -l serverless.minik8s.io/service=sentiment-it -o wide
 
 - 三个 Node、Flannel、kube-proxy 和 `serverless-controller` 都是 Running。
 - `kn func deploy` 创建或更新 `ServerlessService/sentiment-it`。
-- `ServerlessService/sentiment-it` 的 `spec.image` 是 `$REGISTRY/sentiment-it:latest`。
+- `ServerlessService/sentiment-it` 的 `spec.image` 是 `stevenissleepy/sentiment-it:latest`。
 - invoke 返回 JSON，且 `.result.label` 为 `positive`。
 - controller 创建了 `Revision/sentiment-it-*`、`Service/sks-sentiment-it` 和 runtime Pod。
 - 等待 `idleSeconds` 后，`state.runtime.active_instances` 回到 0，对应 runtime Pod 被删除。
