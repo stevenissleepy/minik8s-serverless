@@ -1,8 +1,8 @@
 use chrono::Utc;
 use client_rs::TypedApi;
 use serverless_api::{
-    EventTrigger, EventTriggerStatus, ServerlessService, ServerlessServiceStatus, Workflow,
-    WorkflowStatus,
+    EventSource, EventSourceStatus, EventTrigger, EventTriggerStatus, ServerlessService,
+    ServerlessServiceStatus, Workflow, WorkflowStatus,
 };
 
 use crate::serving::runtime::RuntimeSnapshot;
@@ -61,6 +61,48 @@ pub(crate) async fn patch_workflow_status(
             name = %workflow.metadata.name,
             error = %error,
             "failed to update workflow status"
+        );
+    }
+}
+
+pub(crate) async fn patch_event_source_fired(state: &AppState, source: &EventSource) {
+    let namespace = object_namespace(&source.metadata);
+    let api = TypedApi::<EventSource>::namespaced(state.client.clone(), namespace.clone());
+    let status = EventSourceStatus {
+        ready: true,
+        event_count: source.status.event_count + 1,
+        last_event_at: Some(Utc::now()),
+        last_error: None,
+    };
+    if let Err(error) = api.replace_status(&source.metadata.name, &status).await {
+        tracing::warn!(
+            namespace,
+            name = %source.metadata.name,
+            error = %error,
+            "failed to update eventsource status"
+        );
+    }
+}
+
+pub(crate) async fn patch_event_source_error(
+    state: &AppState,
+    source: &EventSource,
+    message: String,
+) {
+    let namespace = object_namespace(&source.metadata);
+    let api = TypedApi::<EventSource>::namespaced(state.client.clone(), namespace.clone());
+    let status = EventSourceStatus {
+        ready: false,
+        event_count: source.status.event_count,
+        last_event_at: source.status.last_event_at,
+        last_error: Some(message),
+    };
+    if let Err(error) = api.replace_status(&source.metadata.name, &status).await {
+        tracing::warn!(
+            namespace,
+            name = %source.metadata.name,
+            error = %error,
+            "failed to update eventsource status"
         );
     }
 }

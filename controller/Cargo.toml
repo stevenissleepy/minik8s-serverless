@@ -13,6 +13,7 @@ apimachinery = { path = "../../../lib/apimachinery" }
 axum = "0.7"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
+cron = "0.12"
 client-rs = { path = "../../../lib/client-rs" }
 api = { path = "../../../lib/api" }
 logger = { path = "../../../lib/logger" }

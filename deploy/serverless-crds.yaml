@@ -2,7 +2,7 @@
 #
 # 启动 serverless-controller 前先 apply 这个文件。这里的 CustomResourceDefinition
 # 会把 serverless.minik8s.io API 组注册到 apiserver，让用户可以创建
-# ServerlessService、Revision、EventTrigger 和 Workflow 这些自定义资源。
+# ServerlessService、Revision、EventTrigger、EventSource 和 Workflow 这些自定义资源。
 
 ---
 # ServerlessService 是面向用户的 Serving 资源。
@@ -73,6 +73,32 @@ spec:
     kind: EventTrigger
     shortNames:
       - et
+    categories:
+      - serverless
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+
+---
+# EventSource 用于描述会自动产生事件的源。
+# 当前支持定时 ping 事件和文件变化事件；controller 会 watch 这个资源，并把
+# 产生的事件投递给匹配的 EventTrigger。
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: eventsources.serverless.minik8s.io
+spec:
+  group: serverless.minik8s.io
+  names:
+    plural: eventsources
+    singular: eventsource
+    kind: EventSource
+    shortNames:
+      - es
     categories:
       - serverless
   scope: Namespaced

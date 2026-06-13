@@ -1,6 +1,6 @@
 use apimachinery::{DEFAULT_NAMESPACE, Resource};
 use client_rs::{Client, Store, TypedApi};
-use serverless_api::{EventTrigger, ServerlessService, Workflow};
+use serverless_api::{EventSource, EventTrigger, ServerlessService, Workflow};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -14,6 +14,7 @@ pub(crate) struct AppState {
     pub(crate) services: Store<ServerlessService>,
     pub(crate) triggers: Store<EventTrigger>,
     pub(crate) workflows: Store<Workflow>,
+    pub(crate) sources: Store<EventSource>,
     pub(crate) runtime: RuntimeRegistry,
     pub(crate) runtime_pod_locks: RuntimePodLocks,
 }

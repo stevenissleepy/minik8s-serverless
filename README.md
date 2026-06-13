@@ -16,10 +16,11 @@ kubectl apply -f crates/plugin/serverless/deploy/serverless-controller.yaml
 
 这些文件的作用是：
 
-- `crates/plugin/serverless/deploy/serverless-crds.yaml`：注册 Serverless 插件用到的 CRD，包括 `ServerlessService`、`Revision`、`EventTrigger` 和 `Workflow`。
+- `crates/plugin/serverless/deploy/serverless-crds.yaml`：注册 Serverless 插件用到的 CRD，包括 `ServerlessService`、`Revision`、`EventTrigger`、`EventSource` 和 `Workflow`。
 - `ServerlessService` 描述一个 serverless 服务，例如 image、port、环境变量、扩缩容配置。
 - `Revision` 记录某次 image/template 对应的版本。
 - `EventTrigger` 用于把事件源绑定到函数或 workflow。
+- `EventSource` 描述一个会自动产生事件的源，例如定时事件或文件变化事件。
 - `Workflow` 用于描述函数调用链和分支。
 - `serverless-controller.yaml`：启动真正干活的 controller。它 watch 上面的资源，然后创建 Pod、Service，并处理 invoke、冷启动、扩容和 scale-to-0。
 
@@ -69,11 +70,43 @@ kn service create hello \
 
 ## 调用函数
 
+函数有两种触发方式，对应 lab 要求的「HTTP 请求」和「绑定事件触发」。
+
+### 1. HTTP 请求
+
 ```sh
 curl -s http://127.0.0.1:8082/api/v1/namespaces/default/services/hello/invoke \
   -H 'content-type: application/json' \
   -d '{"name":"minik8s"}'
 ```
+
+### 2. 事件触发
+
+事件链路对齐 Knative 的三段式 **Source → Broker → Trigger → 函数**：
+
+- **Source（`EventSource`）**：会自动产生事件的源，对应 Knative 的 Source。
+- **Broker**：网关上的 `POST /api/v1/events/:type`，按事件类型扇出。
+- **Trigger（`EventTrigger`）**：把某个事件类型订阅到函数 / Workflow。
+
+事件在各段之间以 [CloudEvents 1.0](https://cloudevents.io/) 信封传递（`type` / `source` / `id` / `time` / `data`）；函数收到的是 `data` 负载，因此**同一个函数无需改动即可被 HTTP 和事件两种方式调用**。
+
+`EventSource` 目前支持两类源：
+
+| 类型 | 字段 | 行为 | 对齐 Knative |
+|------|------|------|------|
+| `ping` | `intervalSeconds` 或 `schedule`(cron) + `data` | 定时产生事件 | `PingSource` |
+| `file` | `path` + `intervalSeconds` | 轮询文件 mtime，变化即产生事件 | 自定义 Source |
+
+任何外部系统直接 `POST /api/v1/events/:type` 也是一种「自定义事件源」。
+
+```sh
+# 自定义事件源：手动发布一个事件，触发订阅了 comment.created 的函数
+curl -s http://127.0.0.1:8082/api/v1/events/comment.created \
+  -H 'content-type: application/json' \
+  -d '{"text":"good comment"}'
+```
+
+完整的「定时源 + 文件源 + Trigger」示例见 [`examples/event-source.yaml`](examples/event-source.yaml)：apply 之后不需要手动调用，函数会被自动触发，`kubectl get eventsource -o wide` 可以看到 `eventCount` / `lastEventAt` 增长。
 
 ## 查看状态
 

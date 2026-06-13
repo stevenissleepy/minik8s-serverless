@@ -1,8 +1,12 @@
+pub mod event;
+pub mod eventsource;
 pub mod eventtrigger;
 pub mod revision;
 pub mod service;
 pub mod workflow;
 
+pub use event::CloudEvent;
+pub use eventsource::{EventSource, EventSourceSpec, EventSourceStatus, FileSource, PingSource};
 pub use eventtrigger::{
     EventTrigger, EventTriggerSpec, EventTriggerStatus, TriggerTarget, TriggerTargetKind,
 };

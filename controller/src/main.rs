@@ -9,10 +9,11 @@ mod status;
 use anyhow::{Context, Result};
 use clap::Parser;
 use client_rs::{Client, ListParams, TypedApi};
-use serverless_api::{EventTrigger, Revision, ServerlessService, Workflow};
+use serverless_api::{EventSource, EventTrigger, Revision, ServerlessService, Workflow};
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use crate::eventing::event_source_loop;
 use crate::informer::{log_informer_event, wait_for_informers};
 use crate::serving::{RuntimeRegistry, idle_scale_loop, reconcile_loop};
 use crate::state::AppState;
@@ -78,13 +79,19 @@ async fn run() -> Result<()> {
         ListParams::default(),
         log_informer_event::<Workflow>("workflow"),
     );
-    wait_for_informers(&services, &revisions, &triggers, &workflows).await;
+    let sources = client_rs::spawn_informer::<EventSource, _>(
+        TypedApi::<EventSource>::all(client.clone()),
+        ListParams::default(),
+        log_informer_event::<EventSource>("eventsource"),
+    );
+    wait_for_informers(&services, &revisions, &triggers, &workflows, &sources).await;
 
     let state = AppState {
         client,
         services: services.store.clone(),
         triggers: triggers.store.clone(),
         workflows: workflows.store.clone(),
+        sources: sources.store.clone(),
         runtime: RuntimeRegistry::default(),
         runtime_pod_locks: Default::default(),
     };
@@ -95,6 +102,10 @@ async fn run() -> Result<()> {
     let reconcile_state = state.clone();
     tokio::spawn(async move {
         reconcile_loop(reconcile_state, Duration::from_secs(args.reconcile_secs)).await;
+    });
+    let source_state = state.clone();
+    tokio::spawn(async move {
+        event_source_loop(source_state, Duration::from_secs(1)).await;
     });
 
     let app = handlers::routes().with_state(state);

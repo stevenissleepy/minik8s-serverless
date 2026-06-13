@@ -1,0 +1,62 @@
+# 事件源示例（对齐 Knative：Source -> Broker -> Trigger -> Function）。
+#
+# 前提：已部署一个名为 sentiment 的函数（kn service create 或 kn func deploy）。
+# 数据流：EventSource 产生 CloudEvent(type=clock-tick / file-changed)
+#         -> Broker 扇出 -> 同名 eventType 的 EventTrigger -> 调用 sentiment 函数。
+#
+# 验证：
+#   kubectl apply -f event-source.yaml
+#   # 不需要手动调用，函数会被自动触发：
+#   kubectl get eventsource -o wide        # 看 eventCount / lastEventAt 增长
+#   kubectl get serverlessservice sentiment -o wide   # 看实例被自动拉起
+
+# ---- 时间计划源：每 10 秒触发一次（对齐 Knative PingSource）----
+apiVersion: serverless.minik8s.io/v1alpha1
+kind: EventSource
+metadata:
+  name: clock-tick
+  namespace: default
+spec:
+  eventType: clock-tick
+  ping:
+    intervalSeconds: 10
+    # 也可以用 cron，与 intervalSeconds 二选一。注意是 6~7 段（首段是「秒」），
+    # 不是 Unix 标准 5 段。下面表示每 10 秒（秒 分 时 日 月 周 年）：
+    # schedule: "0/10 * * * * * *"
+    data:
+      text: "scheduled sentiment check"
+---
+apiVersion: serverless.minik8s.io/v1alpha1
+kind: EventTrigger
+metadata:
+  name: on-clock-tick
+  namespace: default
+spec:
+  eventType: clock-tick
+  target:
+    kind: Function
+    name: sentiment
+---
+# ---- 文件修改源：监听 /tmp/minik8s-watch.txt，mtime 变化即触发 ----
+# 演示：在控制器所在节点 `echo hi >> /tmp/minik8s-watch.txt` 即可触发一次。
+apiVersion: serverless.minik8s.io/v1alpha1
+kind: EventSource
+metadata:
+  name: watch-file
+  namespace: default
+spec:
+  eventType: file-changed
+  file:
+    path: /tmp/minik8s-watch.txt
+    intervalSeconds: 2
+---
+apiVersion: serverless.minik8s.io/v1alpha1
+kind: EventTrigger
+metadata:
+  name: on-file-changed
+  namespace: default
+spec:
+  eventType: file-changed
+  target:
+    kind: Function
+    name: sentiment

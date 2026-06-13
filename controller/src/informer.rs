@@ -1,6 +1,6 @@
 use apimachinery::Resource;
 use client_rs::{InformerEvent, InformerHandle, Store};
-use serverless_api::{EventTrigger, Revision, ServerlessService, Workflow};
+use serverless_api::{EventSource, EventTrigger, Revision, ServerlessService, Workflow};
 use std::time::Duration;
 
 pub(crate) fn log_informer_event<K>(
@@ -23,11 +23,13 @@ pub(crate) async fn wait_for_informers(
     revisions: &InformerHandle<Revision>,
     triggers: &InformerHandle<EventTrigger>,
     workflows: &InformerHandle<Workflow>,
+    sources: &InformerHandle<EventSource>,
 ) {
     while !services.has_synced()
         || !revisions.has_synced()
         || !triggers.has_synced()
         || !workflows.has_synced()
+        || !sources.has_synced()
     {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
