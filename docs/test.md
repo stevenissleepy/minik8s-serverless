@@ -156,14 +156,92 @@ kubectl get pods -l serverless.minik8s.io/service=sentiment-it -o wide
 - `human-escalate`：高风险工单转人工处理。
 - `notify`：输出最终通知结果。
 
-Workflow 定义在 `crates/plugin/serverless/examples/exp-ticket-support/workflow.yaml`：
+Workflow 如下：
 
-```text
-ticket-classify
-  -> risk-score
-  -> risk >= 80: human-escalate -> notify
-  -> risk < 80: auto-reply -> notify
+```txt
++----------------------+
+| classify             |
+| ticket-classify      |
++----------+-----------+
+           |
+           v
++----------------------+
+| score                |
+| risk-score           |
++----------+-----------+
+           |
+           v
+     +-----+------+
+     | decision   |
+     | == human ? |
+     +--+------+--+
+        |      |
+   yes  |      | no
+        |      |
+        v      v
++----------+  +------------+
+| human    |  | auto       |
+| escalate |  | reply      |
++----+-----+  +------+-----+
+     |               |
+     +-------+-------+
+             |
+             v
+     +---------------+
+     | notify        |
+     | final result  |
+     +---------------+
 ```
 
-EventTrigger 定义在 `crates/plugin/serverless/examples/exp-ticket-support/event-trigger.yaml`，
-用于把 `ticket.created` 事件触发到 `ticket-router` Workflow。
+测试命令：
+
+```sh
+CONTROL_PLANE=<control-plane-ip>
+REGISTRY=stevenissleepy
+
+# deploy 五个 container
+rm -rf ticket-classify
+kn func create -l python ticket-classify
+cp crates/plugin/serverless/examples/exp-ticket-support/functions/ticket_classify.py ticket-classify/function/func.py
+kn func deploy ticket-classify --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
+
+rm -rf risk-score
+kn func create -l python risk-score
+cp crates/plugin/serverless/examples/exp-ticket-support/functions/risk_score.py risk-score/function/func.py
+kn func deploy risk-score --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
+
+rm -rf auto-reply
+kn func create -l python auto-reply
+cp crates/plugin/serverless/examples/exp-ticket-support/functions/auto_reply.py auto-reply/function/func.py
+kn func deploy auto-reply --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
+
+rm -rf human-escalate
+kn func create -l python human-escalate
+cp crates/plugin/serverless/examples/exp-ticket-support/functions/human_escalate.py human-escalate/function/func.py
+kn func deploy human-escalate --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
+
+rm -rf notify
+kn func create -l python notify
+cp crates/plugin/serverless/examples/exp-ticket-support/functions/notify.py notify/function/func.py
+kn func deploy notify --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
+
+# 创建 workflow
+kubectl apply -f crates/plugin/serverless/examples/exp-ticket-support/workflow.yaml
+kubectl apply -f crates/plugin/serverless/examples/exp-ticket-support/event-trigger.yaml
+kubectl get serverlessservices
+kubectl get workflows
+kubectl get eventtriggers
+
+# 第一次调用前还没有 runtime Pod
+kubectl get pods -l serverless.minik8s.io/managed-by=serverless-controller -o wide
+
+# 直接调用 workflow，低风险工单走 auto-reply
+curl -s "http://$CONTROL_PLANE:30082/api/v1/namespaces/default/workflows/ticket-router/invoke" \
+  -H 'content-type: application/json' \
+  -d '{"ticket_id":"T-001","user_level":"normal","text":"password login error"}' | jq
+
+# 通过事件触发 workflow，高风险工单走 human-escalate
+curl -s "http://$CONTROL_PLANE:30082/api/v1/events/ticket.created" \
+  -H 'content-type: application/json' \
+  -d '{"ticket_id":"T-002","user_level":"vip","text":"angry terrible complaint refund security leak"}' | jq
+```
