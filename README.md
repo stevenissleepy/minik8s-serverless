@@ -7,29 +7,21 @@
 
 ## 安装
 
-最小 Serving 栈只需要安装下面三个资源：
+Serverless 插件需要先注册 CRD，再启动 controller：
 
 ```sh
-kubectl apply -f crates/plugin/serverless/crds/serverlessservices.yaml
-kubectl apply -f crates/plugin/serverless/crds/revisions.yaml
+kubectl apply -f crates/plugin/serverless/deploy/serverless-crds.yaml
 kubectl apply -f crates/plugin/serverless/deploy/serverless-controller.yaml
 ```
 
 这些文件的作用是：
 
-- `serverlessservices.yaml`：注册 `ServerlessService` 这个自定义资源，用来描述一个 serverless 服务，例如 image、port、环境变量、扩缩容配置。
-- `revisions.yaml`：注册 `Revision` 这个自定义资源，用来记录某次 image/template 对应的版本。
+- `crates/plugin/serverless/deploy/serverless-crds.yaml`：注册 Serverless 插件用到的 CRD，包括 `ServerlessService`、`Revision`、`EventTrigger` 和 `Workflow`。
+- `ServerlessService` 描述一个 serverless 服务，例如 image、port、环境变量、扩缩容配置。
+- `Revision` 记录某次 image/template 对应的版本。
+- `EventTrigger` 用于把事件源绑定到函数或 workflow。
+- `Workflow` 用于描述函数调用链和分支。
 - `serverless-controller.yaml`：启动真正干活的 controller。它 watch 上面的资源，然后创建 Pod、Service，并处理 invoke、冷启动、扩容和 scale-to-0。
-
-如果需要事件触发或函数链，再安装可选资源：
-
-```sh
-kubectl apply -f crates/plugin/serverless/crds/eventtriggers.yaml
-kubectl apply -f crates/plugin/serverless/crds/workflows.yaml
-```
-
-- `eventtriggers.yaml`：注册 `EventTrigger`，用于把事件源绑定到函数或 workflow。
-- `workflows.yaml`：注册 `Workflow`，用于描述函数调用链和分支。
 
 也就是说，apply 多个文件不是为了“多启动几个程序”，而是在给 apiserver 注册新的资源类型，并启动一个 controller 去调谐这些资源。没有 CRD，apiserver 不认识 `ServerlessService`；没有 controller，资源只会存在 etcd 里，不会真的创建函数 Pod。
 
