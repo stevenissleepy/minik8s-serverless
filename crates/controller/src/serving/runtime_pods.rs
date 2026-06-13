@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::serving::runtime::runtime_key;
@@ -535,8 +535,7 @@ async fn get_status(host: String, port: u16, path: String) -> Result<u16> {
 }
 
 fn get_status_blocking(host: &str, port: u16, path: &str) -> Result<u16> {
-    let mut stream = TcpStream::connect((host, port))
-        .with_context(|| format!("failed to connect to {host}:{port}"))?;
+    let mut stream = connect_tcp(host, port, Duration::from_millis(300))?;
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .context("failed to set read timeout")?;
@@ -558,8 +557,7 @@ fn get_status_blocking(host: &str, port: u16, path: &str) -> Result<u16> {
 
 fn post_json_blocking(host: &str, port: u16, path: &str, input: &Value) -> Result<HttpResponse> {
     let body = serde_json::to_string(input).context("failed to serialize serverless input")?;
-    let mut stream = TcpStream::connect((host, port))
-        .with_context(|| format!("failed to connect to {host}:{port}"))?;
+    let mut stream = connect_tcp(host, port, Duration::from_secs(2))?;
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
         .context("failed to set read timeout")?;
@@ -578,6 +576,33 @@ fn post_json_blocking(host: &str, port: u16, path: &str, input: &Value) -> Resul
         .read_to_end(&mut response)
         .context("failed to read serverless response")?;
     parse_http_response(&response)
+}
+
+fn connect_tcp(host: &str, port: u16, timeout: Duration) -> Result<TcpStream> {
+    let addresses = (host, port)
+        .to_socket_addrs()
+        .with_context(|| format!("failed to resolve {host}:{port}"))?
+        .collect::<Vec<_>>();
+    if addresses.is_empty() {
+        return Err(anyhow!(
+            "failed to resolve {host}:{port}: no socket addresses"
+        ));
+    }
+
+    let mut last_error = None;
+    for address in addresses {
+        match TcpStream::connect_timeout(&address, timeout) {
+            Ok(stream) => return Ok(stream),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(anyhow!(
+        "failed to connect to {host}:{port} within {}ms: {}",
+        timeout.as_millis(),
+        last_error
+            .map(|error| error.to_string())
+            .unwrap_or_else(|| "no socket addresses attempted".to_string())
+    ))
 }
 
 fn parse_http_response(bytes: &[u8]) -> Result<HttpResponse> {
