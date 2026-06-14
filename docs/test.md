@@ -9,11 +9,10 @@
 kubectl get nodes -o wide
 ```
 
-部署网络、Service 转发和 Serverless 插件：
+部署网络和 Serverless 插件；kube-proxy 由 `kubeadm init` 自动安装：
 
 ```sh
 kubectl apply -f deploy/addons/kube-flannel.yaml
-kubectl apply -f deploy/addons/kube-proxy.yaml
 kubectl apply -f crates/plugin/serverless/deploy/serverless-crds.yaml
 kubectl apply -f crates/plugin/serverless/deploy/serverless-controller.yaml
 ```
