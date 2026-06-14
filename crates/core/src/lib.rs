@@ -7,12 +7,14 @@ mod state;
 mod status;
 
 use anyhow::{Context, Result};
+use apimachinery::ObjectRef;
 use clap::Parser;
-use client_rs::{Client, ListParams, TypedApi};
+use client_rs::{Client, InformerEvent, ListParams, Store, TypedApi};
 use serverless_api::{EventSource, EventTrigger, Revision, ServerlessService, Workflow};
 use std::future::Future;
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::sync::mpsc;
 
 use crate::eventing::event_source_loop;
 use crate::informer::{log_informer_event, wait_for_informers};
@@ -82,7 +84,9 @@ fn run_process(run: impl Future<Output = Result<()>>) {
 async fn serving_controller_run() -> Result<()> {
     let args = ServingControllerArgs::parse();
     let client = build_client(args.api_server.as_deref())?;
-    let (services, revisions, triggers, workflows, sources) = spawn_resource_informers(&client);
+    let (reconcile_tx, reconcile_rx) = mpsc::unbounded_channel();
+    let (services, revisions, triggers, workflows, sources) =
+        spawn_resource_informers(&client, Some(reconcile_tx));
     wait_for_informers(&services, &revisions, &triggers, &workflows, &sources).await;
 
     let state = AppState {
@@ -96,7 +100,12 @@ async fn serving_controller_run() -> Result<()> {
     };
     let reconcile_state = state.clone();
     tokio::spawn(async move {
-        reconcile_loop(reconcile_state, Duration::from_secs(args.reconcile_secs)).await;
+        reconcile_loop(
+            reconcile_state,
+            Duration::from_secs(args.reconcile_secs),
+            reconcile_rx,
+        )
+        .await;
     });
 
     let app = handlers::health_routes().with_state(state);
@@ -112,7 +121,8 @@ async fn serving_controller_run() -> Result<()> {
 async fn activator_run() -> Result<()> {
     let args = ActivatorArgs::parse();
     let client = build_client(args.api_server.as_deref())?;
-    let (services, revisions, triggers, workflows, sources) = spawn_resource_informers(&client);
+    let (services, revisions, triggers, workflows, sources) =
+        spawn_resource_informers(&client, None);
     wait_for_informers(&services, &revisions, &triggers, &workflows, &sources).await;
 
     let state = AppState {
@@ -152,6 +162,7 @@ fn build_client(api_server: Option<&str>) -> Result<Client> {
 
 fn spawn_resource_informers(
     client: &Client,
+    service_reconcile_tx: Option<mpsc::UnboundedSender<ObjectRef>>,
 ) -> (
     client_rs::InformerHandle<ServerlessService>,
     client_rs::InformerHandle<Revision>,
@@ -162,7 +173,7 @@ fn spawn_resource_informers(
     let services = client_rs::spawn_informer::<ServerlessService, _>(
         TypedApi::<ServerlessService>::all(client.clone()),
         ListParams::default(),
-        log_informer_event::<ServerlessService>("serverlessservice"),
+        service_event_handler(service_reconcile_tx),
     );
     let revisions = client_rs::spawn_informer::<Revision, _>(
         TypedApi::<Revision>::all(client.clone()),
@@ -185,4 +196,22 @@ fn spawn_resource_informers(
         log_informer_event::<EventSource>("eventsource"),
     );
     (services, revisions, triggers, workflows, sources)
+}
+
+fn service_event_handler(
+    reconcile_tx: Option<mpsc::UnboundedSender<ObjectRef>>,
+) -> impl FnMut(InformerEvent, &Store<ServerlessService>) + Send + 'static {
+    let mut log = log_informer_event::<ServerlessService>("serverlessservice");
+    move |event, store| {
+        let key = match &event {
+            InformerEvent::Added(key)
+            | InformerEvent::Modified(key)
+            | InformerEvent::Deleted(key) => Some(key.clone()),
+            InformerEvent::Synced | InformerEvent::Error(_) => None,
+        };
+        log(event, store);
+        if let (Some(tx), Some(key)) = (&reconcile_tx, key) {
+            let _ = tx.send(key);
+        }
+    }
 }

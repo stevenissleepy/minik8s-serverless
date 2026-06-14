@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use api::pod::{ContainerPort, ContainerSpec, EnvVar, Pod, PodPhase, PodSpec};
 use api::service::{Protocol, Service, ServicePort, ServiceSpec, ServiceType};
-use apimachinery::{LabelSelector, ObjectMeta, Resource, TypeMeta};
+use apimachinery::{LabelSelector, ObjectMeta, ObjectRef, Resource, TypeMeta};
 use chrono::Utc;
 use client_rs::{ListParams, TypedApi};
 use serde_json::Value;
@@ -67,34 +67,53 @@ pub(crate) async fn invoke_service_pod(
 
 pub(crate) async fn reconcile_all_services(state: &AppState) {
     for service in state.services.items() {
-        let desired = desired_instances(&service);
-        match reconcile_service_resources(state, &service, desired).await {
-            Ok(active_instances) => {
-                patch_service_observed_status(state, &service, active_instances, None).await;
-            }
-            Err(error) => {
-                let message = format!("{error:#}");
-                tracing::warn!(
-                    namespace = %object_namespace(&service.metadata),
-                    name = %service.metadata.name,
-                    error = %message,
-                    "failed to reconcile ServerlessService"
-                );
-                patch_service_observed_status(
-                    state,
-                    &service,
-                    service.status.active_instances,
-                    Some(message),
-                )
-                .await;
-            }
-        }
+        reconcile_service(state, &service).await;
     }
     if let Err(error) = cleanup_orphan_runtime_resources(state).await {
         tracing::warn!(
             error = %format!("{error:#}"),
             "failed to cleanup orphan serverless resources"
         );
+    }
+}
+
+pub(crate) async fn reconcile_service_by_key(state: &AppState, key: &ObjectRef) {
+    match state.services.get(key) {
+        Some(service) => reconcile_service(state, &service).await,
+        None => {
+            if let Err(error) = cleanup_orphan_runtime_resources(state).await {
+                tracing::warn!(
+                    key = %key.object_key(),
+                    error = %format!("{error:#}"),
+                    "failed to cleanup deleted ServerlessService resources"
+                );
+            }
+        }
+    }
+}
+
+async fn reconcile_service(state: &AppState, service: &ServerlessService) {
+    let desired = desired_instances(service);
+    match reconcile_service_resources(state, service, desired).await {
+        Ok(active_instances) => {
+            patch_service_observed_status(state, service, active_instances, None).await;
+        }
+        Err(error) => {
+            let message = format!("{error:#}");
+            tracing::warn!(
+                namespace = %object_namespace(&service.metadata),
+                name = %service.metadata.name,
+                error = %message,
+                "failed to reconcile ServerlessService"
+            );
+            patch_service_observed_status(
+                state,
+                service,
+                service.status.active_instances,
+                Some(message),
+            )
+            .await;
+        }
     }
 }
 

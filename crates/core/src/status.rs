@@ -69,26 +69,54 @@ pub(crate) async fn patch_service_observed_status(
     last_error: Option<String>,
 ) {
     let namespace = object_namespace(&service.metadata);
+    let latest_revision = service_revision_name(service);
+    let url = service_url(service);
+
+    if observed_status_matches(
+        service,
+        active_instances,
+        &latest_revision,
+        &url,
+        &last_error,
+    ) {
+        return;
+    }
+
     let patch = match last_error {
         Some(error) => json!({
             "status": {
                 "ready": false,
-                "latestRevision": service_revision_name(service),
+                "latestRevision": latest_revision,
                 "activeInstances": active_instances,
-                "url": service_url(service),
+                "url": url,
                 "lastError": error,
             }
         }),
         None => json!({
             "status": {
                 "ready": true,
-                "latestRevision": service_revision_name(service),
+                "latestRevision": latest_revision,
                 "activeInstances": active_instances,
-                "url": service_url(service),
+                "url": url,
+                "lastError": null,
             }
         }),
     };
     patch_service_status(state, &namespace, &service.metadata.name, patch).await;
+}
+
+fn observed_status_matches(
+    service: &ServerlessService,
+    active_instances: u32,
+    latest_revision: &str,
+    url: &str,
+    last_error: &Option<String>,
+) -> bool {
+    service.status.ready == last_error.is_none()
+        && service.status.active_instances == active_instances
+        && service.status.latest_revision.as_deref() == Some(latest_revision)
+        && service.status.url.as_deref() == Some(url)
+        && service.status.last_error.as_deref() == last_error.as_deref()
 }
 
 async fn patch_service_status(
