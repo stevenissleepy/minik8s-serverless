@@ -20,6 +20,34 @@ spec:
         - serverless-controller
       args:
         - --api-server=http://127.0.0.1:8080
+        - --bind=0.0.0.0:8083
+        - --reconcile-secs=1
+      ports:
+        - containerPort: 8083
+          protocol: TCP
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: serverless-activator
+  namespace: kube-system
+  labels:
+    component: serverless-activator
+spec:
+  hostNetwork: true
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  containers:
+    - name: serverless-activator
+      image: stevenissleepy/serverless-activator:latest
+      command:
+        - serverless-activator
+      args:
+        - --api-server=http://127.0.0.1:8080
         - --bind=0.0.0.0:8082
       ports:
         - containerPort: 8082
@@ -28,12 +56,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: serverless-controller
+  name: serverless-activator
   namespace: kube-system
 spec:
   type: NodePort
   selector:
-    component: serverless-controller
+    component: serverless-activator
   ports:
     - name: http
       port: 8082

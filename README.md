@@ -3,15 +3,15 @@
 这个插件采用一个简化版 Knative-like 结构：
 
 - Function 层：`kn func create/deploy` 面向本地源码，负责创建函数模板、构建每个函数自己的 OCI image、push image，然后通过 apiserver 提交 `ServerlessService`。
-- Serving 层：`serverless-controller` 面向已经存在的 image，watch `ServerlessService` 和 `Revision`，再创建/维护底层 Pod 和 Service。controller 不 build image、不 pull image，也不直接运行容器。
+- Serving 层：`serverless-controller` watch `ServerlessService` 和 `Revision`，创建/维护底层 Revision、Pod 和 Service；`serverless-activator` 是独立数据面入口，处理 invoke/event/workflow 请求、发布扩缩容意图并等待冷启动 Pod 就绪。serverless-controller 不 build image、不 pull image，也不直接运行容器。
 
 ## 安装
 
-Serverless 插件需要先注册 CRD，再启动 controller：
+Serverless 插件需要先注册 CRD，再启动 serverless-controller 和 serverless-activator：
 
 ```sh
 kubectl apply -f crates/plugin/serverless/deploy/serverless-crds.yaml
-kubectl apply -f crates/plugin/serverless/deploy/serverless-controller.yaml
+kubectl apply -f crates/plugin/serverless/deploy/serverless-core.yaml
 ```
 
 这些文件的作用是：
@@ -22,9 +22,9 @@ kubectl apply -f crates/plugin/serverless/deploy/serverless-controller.yaml
 - `EventTrigger` 用于把事件源绑定到函数或 workflow。
 - `EventSource` 描述一个会自动产生事件的源，例如定时事件或文件变化事件。
 - `Workflow` 用于描述函数调用链和分支。
-- `serverless-controller.yaml`：启动真正干活的 controller。它 watch 上面的资源，然后创建 Pod、Service，并处理 invoke、冷启动、扩容和 scale-to-0。
+- `serverless-core.yaml`：启动 `serverless-controller` 和 `serverless-activator`。serverless-controller watch 上面的资源并调谐 Revision、Pod、Service；serverless-activator 作为独立入口处理 invoke、冷启动等待、并发扩容意图和 scale-to-0。
 
-也就是说，apply 多个文件不是为了“多启动几个程序”，而是在给 apiserver 注册新的资源类型，并启动一个 controller 去调谐这些资源。没有 CRD，apiserver 不认识 `ServerlessService`；没有 controller，资源只会存在 etcd 里，不会真的创建函数 Pod。
+也就是说，apply 多个文件不是为了“多启动几个程序”，而是在给 apiserver 注册新的资源类型，并启动 serverless-controller/serverless-activator 两个职责不同的组件。当前核心组件是 2 个 Pod、2 个 container、2 个 image：`stevenissleepy/serverless-controller:latest` 只包含 controller 二进制，`stevenissleepy/serverless-activator:latest` 只包含 activator 二进制。没有 CRD，apiserver 不认识 `ServerlessService`；没有 serverless-controller，资源只会存在 etcd 里，不会真的创建函数 Pod；没有 serverless-activator，请求入口和冷启动流量承接不存在。
 
 ## 从 Python 源码部署
 
@@ -42,7 +42,8 @@ kn func deploy --registry ghcr.io/myname --api-server http://127.0.0.1:8080
   -> 使用目录里的 Dockerfile 构建 image
   -> push 到 registry
   -> 创建/更新 ServerlessService
-  -> serverless-controller 创建 Pod 和 Service
+  -> serverless-controller 创建 Revision 和 Service
+  -> serverless-activator 收到请求后发布 desired scale，serverless-controller 创建 runtime Pod
 ```
 
 ## 从已有镜像部署
@@ -66,7 +67,7 @@ kn service create hello \
 | `maxScale` | 10 | 并发扩容的实例上限 |
 | `idleSeconds` | 60 | 无请求多少秒后缩回 `minScale` |
 
-冷启动时网关等待 Pod 就绪的上限固定为 300 秒（对齐 Knative revision `timeoutSeconds` 的默认值），足够覆盖加载模型权重这类慢启动函数；调用方的客户端超时要按函数实际冷启动时长设置。
+冷启动时 Activator 等待 Pod 就绪的上限固定为 300 秒（对齐 Knative revision `timeoutSeconds` 的默认值），足够覆盖加载模型权重这类慢启动函数；调用方的客户端超时要按函数实际冷启动时长设置。
 
 ## 调用函数
 
@@ -85,7 +86,7 @@ curl -s http://127.0.0.1:8082/api/v1/namespaces/default/services/hello/invoke \
 事件链路对齐 Knative 的三段式 **Source → Broker → Trigger → 函数**：
 
 - **Source（`EventSource`）**：会自动产生事件的源，对应 Knative 的 Source。
-- **Broker**：网关上的 `POST /api/v1/events/:type`，按事件类型扇出。
+- **Broker**：Activator 上的 `POST /api/v1/events/:type`，按事件类型扇出。
 - **Trigger（`EventTrigger`）**：把某个事件类型订阅到函数 / Workflow。
 
 事件在各段之间以 [CloudEvents 1.0](https://cloudevents.io/) 信封传递（`type` / `source` / `id` / `time` / `data`）；函数收到的是 `data` 负载，因此**同一个函数无需改动即可被 HTTP 和事件两种方式调用**。

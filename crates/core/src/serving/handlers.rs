@@ -93,7 +93,7 @@ pub(crate) async fn invoke_function_inner(
     let (started, in_flight) = state.runtime.begin(&service);
     patch_service_runtime_status(state, &service, &started, None).await;
 
-    let result = invoke_service_pod(state, &service, input, started.active_instances).await;
+    let result = invoke_service_pod(state, &service, input).await;
     let finished = in_flight.finish();
     match result {
         Ok(result) => {

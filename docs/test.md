@@ -14,7 +14,7 @@ kubectl get nodes -o wide
 ```sh
 kubectl apply -f deploy/addons/kube-flannel.yaml
 kubectl apply -f crates/plugin/serverless/deploy/serverless-crds.yaml
-kubectl apply -f crates/plugin/serverless/deploy/serverless-controller.yaml
+kubectl apply -f crates/plugin/serverless/deploy/serverless-core.yaml
 ```
 
 确认插件启动成功：
@@ -29,7 +29,7 @@ kubectl get pods -A -o wide
 - 三个 Node 都是 `Ready`。
 - `kube-flannel` 下每个 Node 一个 Flannel Pod，均为 Running。
 - `kube-system` 下每个 Node 一个 `kube-proxy` Pod，均为 Running。
-- `kube-system/serverless-controller` 在 control-plane 上 Running。
+- `kube-system/serverless-controller` 和 `kube-system/serverless-activator` 在 control-plane 上 Running。
 
 ## Serving 层
 
@@ -67,7 +67,7 @@ curl -s http://$CONTROL_PLANE:30082/api/v1/namespaces/default/services/sentiment
 期望：
 
 - 返回 JSON 中 `.result.label` 为 `positive`。
-- controller 创建了 `Revision/sentiment-it-*`、`Service/sks-sentiment-it` 和 `sks-sentiment-it-*` runtime Pod。
+- serverless-controller 创建了 `Revision/sentiment-it-*`、`Service/sks-sentiment-it` 和 `sks-sentiment-it-*` runtime Pod；HTTP 请求入口经过 `serverless-activator`。
 - 每个 `ServerlessService` 的用户函数运行在独立 runtime Pod 中。
 
 ## Function 层
@@ -135,11 +135,11 @@ kubectl get pods -l serverless.minik8s.io/service=sentiment-it -o wide
 
 通过标准：
 
-- 三个 Node、Flannel、kube-proxy 和 `serverless-controller` 都是 Running。
+- 三个 Node、Flannel、kube-proxy、`serverless-controller` 和 `serverless-activator` 都是 Running。
 - `kn func deploy` 创建或更新 `ServerlessService/sentiment-it`。
 - `ServerlessService/sentiment-it` 的 `spec.image` 是 `stevenissleepy/sentiment-it:latest`。
 - invoke 返回 JSON，且 `.result.label` 为 `positive`。
-- controller 创建了 `Revision/sentiment-it-*`、`Service/sks-sentiment-it` 和 runtime Pod。
+- serverless-controller 创建了 `Revision/sentiment-it-*`、`Service/sks-sentiment-it` 和 runtime Pod，serverless-activator 负责请求承接和冷启动等待。
 - 等待 `idleSeconds` 后，`state.runtime.active_instances` 回到 0，对应 runtime Pod 被删除。
 
 ## 复杂应用

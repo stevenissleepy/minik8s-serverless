@@ -92,6 +92,8 @@ pub struct ServerlessServiceStatus {
     pub latest_revision: Option<String>,
     #[serde(rename = "activeInstances", default)]
     pub active_instances: u32,
+    #[serde(rename = "desiredInstances", default)]
+    pub desired_instances: u32,
     #[serde(rename = "inFlight", default)]
     pub in_flight: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]

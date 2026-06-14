@@ -16,7 +16,7 @@ use crate::state::AppState;
 
 pub(crate) async fn reconcile_loop(state: AppState, interval: Duration) {
     loop {
-        tokio::time::sleep(interval).await;
         reconcile_all_services(&state).await;
+        tokio::time::sleep(interval).await;
     }
 }

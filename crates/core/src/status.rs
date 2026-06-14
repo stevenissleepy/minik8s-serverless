@@ -1,14 +1,17 @@
 use chrono::Utc;
-use client_rs::TypedApi;
+use client_rs::{PatchType, TypedApi};
+use serde_json::json;
 use serverless_api::{
-    EventSource, EventSourceStatus, EventTrigger, EventTriggerStatus, ServerlessService,
-    ServerlessServiceStatus, Workflow, WorkflowStatus,
+    EventSource, EventSourceStatus, EventTrigger, EventTriggerStatus, ServerlessService, Workflow,
+    WorkflowStatus,
 };
 
 use crate::serving::runtime::RuntimeSnapshot;
-use crate::serving::runtime_pods::service_status;
+use crate::serving::runtime_pods::{service_revision_name, service_url};
 use crate::state::{AppState, object_namespace};
 
+/// Activator-owned runtime signal. This is intentionally a merge patch because
+/// serverless-controller owns observed fields such as `activeInstances`.
 pub(crate) async fn patch_service_runtime_status(
     state: &AppState,
     service: &ServerlessService,
@@ -16,29 +19,65 @@ pub(crate) async fn patch_service_runtime_status(
     last_error: Option<String>,
 ) {
     let namespace = object_namespace(&service.metadata);
-    update_service_status(
+    let last_error = match last_error {
+        Some(error) => json!(error),
+        None => serde_json::Value::Null,
+    };
+    patch_service_status(
         state,
         &namespace,
         &service.metadata.name,
-        service_status(
-            service,
-            snapshot.active_instances,
-            snapshot.in_flight,
-            last_error,
-        ),
+        json!({
+            "status": {
+                "desiredInstances": snapshot.active_instances,
+                "inFlight": snapshot.in_flight,
+                "lastInvokedAt": Utc::now(),
+                "lastError": last_error,
+            }
+        }),
     )
     .await;
 }
 
-pub(crate) async fn update_service_status(
+/// serverless-controller-owned observation after reconciling runtime resources.
+pub(crate) async fn patch_service_observed_status(
+    state: &AppState,
+    service: &ServerlessService,
+    active_instances: u32,
+    last_error: Option<String>,
+) {
+    let namespace = object_namespace(&service.metadata);
+    let patch = match last_error {
+        Some(error) => json!({
+            "status": {
+                "ready": false,
+                "latestRevision": service_revision_name(service),
+                "activeInstances": active_instances,
+                "url": service_url(service),
+                "lastError": error,
+            }
+        }),
+        None => json!({
+            "status": {
+                "ready": true,
+                "latestRevision": service_revision_name(service),
+                "activeInstances": active_instances,
+                "url": service_url(service),
+            }
+        }),
+    };
+    patch_service_status(state, &namespace, &service.metadata.name, patch).await;
+}
+
+async fn patch_service_status(
     state: &AppState,
     namespace: &str,
     name: &str,
-    status: ServerlessServiceStatus,
+    patch: serde_json::Value,
 ) {
     let api =
         TypedApi::<ServerlessService>::namespaced(state.client.clone(), namespace.to_string());
-    if let Err(error) = api.replace_status(name, &status).await {
+    if let Err(error) = api.patch_status(name, PatchType::Merge, &patch).await {
         tracing::warn!(namespace, name, error = %error, "failed to update ServerlessService status");
     }
 }

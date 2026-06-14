@@ -5,9 +5,7 @@ use apimachinery::{LabelSelector, ObjectMeta, Resource, TypeMeta};
 use chrono::Utc;
 use client_rs::{ListParams, TypedApi};
 use serde_json::Value;
-use serverless_api::{
-    Revision, RevisionSpec, RevisionStatus, ServerlessService, ServerlessServiceStatus,
-};
+use serverless_api::{Revision, RevisionSpec, RevisionStatus, ServerlessService};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::hash_map::DefaultHasher;
@@ -18,6 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::serving::runtime::runtime_key;
 use crate::state::{AppState, object_namespace};
+use crate::status::patch_service_observed_status;
 
 const MANAGED_BY_LABEL: &str = "serverless.minik8s.io/managed-by";
 const SERVICE_LABEL: &str = "serverless.minik8s.io/service";
@@ -28,9 +27,7 @@ pub(crate) async fn invoke_service_pod(
     state: &AppState,
     service: &ServerlessService,
     input: Value,
-    desired_instances: u32,
 ) -> Result<Value> {
-    reconcile_service_resources(state, service, desired_instances.max(1)).await?;
     let pod = ensure_ready_service_pod(state, service).await?;
     let pod_ip = pod
         .status
@@ -68,31 +65,29 @@ pub(crate) async fn invoke_service_pod(
     })
 }
 
-pub(crate) async fn scale_service_pods(
-    state: &AppState,
-    service: &ServerlessService,
-    desired_instances: u32,
-) -> Result<()> {
-    reconcile_service_resources(state, service, desired_instances).await
-}
-
 pub(crate) async fn reconcile_all_services(state: &AppState) {
     for service in state.services.items() {
-        let desired = state
-            .runtime
-            .snapshot(&runtime_key(
-                &object_namespace(&service.metadata),
-                &service.metadata.name,
-            ))
-            .active_instances
-            .max(service.spec.scale.min_scale);
-        if let Err(error) = reconcile_service_resources(state, &service, desired).await {
-            tracing::warn!(
-                namespace = %object_namespace(&service.metadata),
-                name = %service.metadata.name,
-                error = %format!("{error:#}"),
-                "failed to reconcile ServerlessService"
-            );
+        let desired = desired_instances(&service);
+        match reconcile_service_resources(state, &service, desired).await {
+            Ok(active_instances) => {
+                patch_service_observed_status(state, &service, active_instances, None).await;
+            }
+            Err(error) => {
+                let message = format!("{error:#}");
+                tracing::warn!(
+                    namespace = %object_namespace(&service.metadata),
+                    name = %service.metadata.name,
+                    error = %message,
+                    "failed to reconcile ServerlessService"
+                );
+                patch_service_observed_status(
+                    state,
+                    &service,
+                    service.status.active_instances,
+                    Some(message),
+                )
+                .await;
+            }
         }
     }
     if let Err(error) = cleanup_orphan_runtime_resources(state).await {
@@ -168,7 +163,7 @@ async fn reconcile_service_resources(
     state: &AppState,
     service: &ServerlessService,
     desired_instances: u32,
-) -> Result<()> {
+) -> Result<u32> {
     let namespace = object_namespace(&service.metadata);
     let lock = state
         .runtime_pod_locks
@@ -206,18 +201,31 @@ async fn reconcile_service_resources(
             })?;
         }
         update_revision_status(state, service, &revision_name, true).await;
-        return Ok(());
+        return Ok(desired_instances);
     }
 
     if active.len() > desired_instances as usize {
         active.sort_by_key(|pod| pod.metadata.creation_timestamp);
-        for pod in active.into_iter().skip(desired_instances as usize) {
+        for pod in active.iter().skip(desired_instances as usize) {
             delete_pod_if_exists(&api, &pod.metadata.name).await?;
         }
     }
 
     update_revision_status(state, service, &revision_name, true).await;
-    Ok(())
+    Ok(desired_instances)
+}
+
+fn desired_instances(service: &ServerlessService) -> u32 {
+    let max_instances = service
+        .spec
+        .scale
+        .max_scale
+        .max(service.spec.scale.min_scale);
+    service
+        .status
+        .desired_instances
+        .max(service.spec.scale.min_scale)
+        .min(max_instances)
 }
 
 async fn ensure_revision(
@@ -498,23 +506,6 @@ pub(crate) fn service_url(service: &ServerlessService) -> String {
         object_namespace(&service.metadata),
         service.spec.port
     )
-}
-
-pub(crate) fn service_status(
-    service: &ServerlessService,
-    active_instances: u32,
-    in_flight: u32,
-    last_error: Option<String>,
-) -> ServerlessServiceStatus {
-    ServerlessServiceStatus {
-        ready: true,
-        latest_revision: Some(service_revision_name(service)),
-        active_instances,
-        in_flight,
-        url: Some(service_url(service)),
-        last_invoked_at: Some(Utc::now()),
-        last_error,
-    }
 }
 
 struct HttpResponse {

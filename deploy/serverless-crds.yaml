@@ -1,14 +1,14 @@
 # Serverless Serving CRD 聚合清单。
 #
-# 启动 serverless-controller 前先 apply 这个文件。这里的 CustomResourceDefinition
+# 启动 serverless-controller / serverless-activator 前先 apply 这个文件。这里的 CustomResourceDefinition
 # 会把 serverless.minik8s.io API 组注册到 apiserver，让用户可以创建
 # ServerlessService、Revision、EventTrigger、EventSource 和 Workflow 这些自定义资源。
 
 ---
 # ServerlessService 是面向用户的 Serving 资源。
 # 它描述一个 serverless 服务，包括运行镜像、容器端口、环境变量、并发目标和
-# scale-to-zero 配置。serverless-controller 会 watch 这个资源，并为它创建
-# 对应的 Revision、Service 和 runtime Pod。
+# scale-to-zero 配置。serverless-controller 会 watch 这个资源并调谐
+# 对应的 Revision、Service 和 runtime Pod；serverless-activator 承接请求并发布扩缩容意图。
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -33,7 +33,7 @@ spec:
 
 ---
 # Revision 记录 ServerlessService 模板生成出的具体版本。
-# 当服务镜像或模板变化时，controller 会创建新的 Revision，并用这个 Revision
+# 当服务镜像或模板变化时，serverless-controller 会创建新的 Revision，并用这个 Revision
 # 名称标记对应的 runtime 资源。
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -85,7 +85,7 @@ spec:
 
 ---
 # EventSource 用于描述会自动产生事件的源。
-# 当前支持定时 ping 事件和文件变化事件；controller 会 watch 这个资源，并把
+# 当前支持定时 ping 事件和文件变化事件；serverless-activator 会 watch 这个资源，并把
 # 产生的事件投递给匹配的 EventTrigger。
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -111,7 +111,7 @@ spec:
 
 ---
 # Workflow 描述函数调用链和分支步骤。
-# 当收到 workflow 调用请求时，controller 会按步骤调用其中引用的 ServerlessService。
+# 当收到 workflow 调用请求时，serverless-activator 会按步骤调用其中引用的 ServerlessService。
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
