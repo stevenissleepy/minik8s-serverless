@@ -4,13 +4,18 @@ use axum::{Json, Router};
 use serde::Serialize;
 use serde_json::Value;
 use serverless_api::Workflow;
+use tokio::task::JoinSet;
 
 use crate::http::{HttpResult, api_error, decode_json_body};
 use crate::serving::runtime::{RuntimeSnapshot, runtime_key};
 use crate::serving::runtime_pods::invoke_service_pod;
-use crate::serving::workflow::{WorkflowInvokeResponse, WorkflowTraceEntry, next_step};
+use crate::serving::workflow::{
+    WorkflowInvokeResponse, WorkflowTraceEntry, next_step, reachable_functions,
+};
 use crate::state::{AppState, load_service, load_workflow, object_namespace};
-use crate::status::{patch_service_runtime_status, patch_workflow_status};
+use crate::status::{
+    patch_service_desired_status, patch_service_runtime_status, patch_workflow_status,
+};
 
 #[derive(Debug, Serialize)]
 pub(crate) struct InvokeResponse {
@@ -131,6 +136,8 @@ async fn invoke_loaded_workflow(
     workflow: Workflow,
     input: Value,
 ) -> HttpResult<WorkflowInvokeResponse> {
+    prewarm_workflow_functions(state, namespace, &workflow).await;
+
     let mut current = workflow.spec.entrypoint.clone();
     let mut value = input;
     let mut trace = Vec::new();
@@ -163,4 +170,47 @@ async fn invoke_loaded_workflow(
     let error = "workflow exceeded 64 steps; possible cycle".to_string();
     patch_workflow_status(state, &workflow, Some(error.clone())).await;
     Err(api_error(error))
+}
+
+async fn prewarm_workflow_functions(state: &AppState, namespace: &str, workflow: &Workflow) {
+    let functions = reachable_functions(workflow);
+    if functions.is_empty() {
+        return;
+    }
+
+    let mut tasks = JoinSet::new();
+    for function in functions {
+        let state = state.clone();
+        let namespace = namespace.to_string();
+        tasks.spawn(async move {
+            match load_service(&state, &namespace, &function).await {
+                Ok(service) => {
+                    if let Some(snapshot) = state.runtime.prewarm(&service) {
+                        patch_service_desired_status(&state, &service, snapshot.active_instances)
+                            .await;
+                        tracing::debug!(
+                            namespace,
+                            function,
+                            desired_instances = snapshot.active_instances,
+                            "prewarmed workflow function"
+                        );
+                    }
+                }
+                Err((_, message)) => {
+                    tracing::warn!(
+                        namespace,
+                        function,
+                        error = %message.trim(),
+                        "failed to prewarm workflow function"
+                    );
+                }
+            }
+        });
+    }
+
+    while let Some(result) = tasks.join_next().await {
+        if let Err(error) = result {
+            tracing::warn!(error = %error, "workflow prewarm task failed");
+        }
+    }
 }

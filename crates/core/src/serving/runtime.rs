@@ -27,25 +27,24 @@ pub(crate) struct RuntimeSnapshot {
 impl RuntimeRegistry {
     pub(crate) fn begin(&self, service: &ServerlessService) -> (RuntimeSnapshot, InFlightGuard) {
         let key = service_key(service);
+        let max_instances = max_instances(service);
         let mut guard = self
             .inner
             .write()
             .unwrap_or_else(|error| error.into_inner());
         let entry = guard.entry(key.clone()).or_insert_with(|| RuntimeEntry {
-            active_instances: service.spec.scale.min_scale,
+            active_instances: initial_desired_instances(service, max_instances),
             in_flight: 0,
             last_used: Instant::now(),
         });
+        entry.active_instances = entry
+            .active_instances
+            .max(initial_desired_instances(service, max_instances))
+            .min(max_instances);
         if entry.active_instances == 0 {
             entry.active_instances = 1;
         }
         let target = service.spec.concurrency.target.max(1);
-        let max_instances = service
-            .spec
-            .scale
-            .max_scale
-            .max(service.spec.scale.min_scale)
-            .max(1);
         if entry.in_flight >= entry.active_instances.saturating_mul(target)
             && entry.active_instances < max_instances
         {
@@ -65,6 +64,32 @@ impl RuntimeRegistry {
                 armed: true,
             },
         )
+    }
+
+    pub(crate) fn prewarm(&self, service: &ServerlessService) -> Option<RuntimeSnapshot> {
+        let max_instances = max_instances(service);
+        let desired = initial_desired_instances(service, max_instances)
+            .max(1)
+            .min(max_instances);
+        let key = service_key(service);
+        let mut guard = self
+            .inner
+            .write()
+            .unwrap_or_else(|error| error.into_inner());
+        let entry = guard.entry(key).or_insert_with(|| RuntimeEntry {
+            active_instances: initial_desired_instances(service, max_instances),
+            in_flight: 0,
+            last_used: Instant::now(),
+        });
+        if entry.active_instances >= desired && service.status.desired_instances >= desired {
+            return None;
+        }
+        entry.active_instances = entry.active_instances.max(desired).min(max_instances);
+        entry.last_used = Instant::now();
+        Some(RuntimeSnapshot {
+            active_instances: entry.active_instances,
+            in_flight: entry.in_flight,
+        })
     }
 
     fn end_by_key(&self, key: &str) -> RuntimeSnapshot {
@@ -181,4 +206,21 @@ pub(crate) fn service_key(service: &ServerlessService) -> String {
 
 pub(crate) fn runtime_key(namespace: &str, name: &str) -> String {
     format!("{namespace}/{name}")
+}
+
+fn max_instances(service: &ServerlessService) -> u32 {
+    service
+        .spec
+        .scale
+        .max_scale
+        .max(service.spec.scale.min_scale)
+        .max(1)
+}
+
+fn initial_desired_instances(service: &ServerlessService, max_instances: u32) -> u32 {
+    service
+        .status
+        .desired_instances
+        .max(service.spec.scale.min_scale)
+        .min(max_instances)
 }

@@ -39,6 +39,28 @@ pub(crate) async fn patch_service_runtime_status(
     .await;
 }
 
+/// Activator-owned prewarm signal. It intentionally avoids touching
+/// `inFlight` and `lastInvokedAt` because no user request has entered the
+/// target function yet.
+pub(crate) async fn patch_service_desired_status(
+    state: &AppState,
+    service: &ServerlessService,
+    desired_instances: u32,
+) {
+    let namespace = object_namespace(&service.metadata);
+    patch_service_status(
+        state,
+        &namespace,
+        &service.metadata.name,
+        json!({
+            "status": {
+                "desiredInstances": desired_instances,
+            }
+        }),
+    )
+    .await;
+}
+
 /// serverless-controller-owned observation after reconciling runtime resources.
 pub(crate) async fn patch_service_observed_status(
     state: &AppState,
