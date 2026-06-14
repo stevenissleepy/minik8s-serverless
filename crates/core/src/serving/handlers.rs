@@ -4,7 +4,6 @@ use axum::{Json, Router};
 use serde::Serialize;
 use serde_json::Value;
 use serverless_api::Workflow;
-use tokio::task::JoinSet;
 
 use crate::http::{HttpResult, api_error, decode_json_body};
 use crate::serving::runtime::{RuntimeSnapshot, runtime_key};
@@ -136,7 +135,7 @@ async fn invoke_loaded_workflow(
     workflow: Workflow,
     input: Value,
 ) -> HttpResult<WorkflowInvokeResponse> {
-    prewarm_workflow_functions(state, namespace, &workflow).await;
+    prewarm_workflow_functions(state, namespace, &workflow);
 
     let mut current = workflow.spec.entrypoint.clone();
     let mut value = input;
@@ -172,17 +171,20 @@ async fn invoke_loaded_workflow(
     Err(api_error(error))
 }
 
-async fn prewarm_workflow_functions(state: &AppState, namespace: &str, workflow: &Workflow) {
+fn prewarm_workflow_functions(state: &AppState, namespace: &str, workflow: &Workflow) {
+    let entrypoint_function = workflow
+        .spec
+        .steps
+        .get(&workflow.spec.entrypoint)
+        .map(|step| step.function.as_str());
     let functions = reachable_functions(workflow);
-    if functions.is_empty() {
-        return;
-    }
-
-    let mut tasks = JoinSet::new();
-    for function in functions {
+    for function in functions
+        .into_iter()
+        .filter(|function| Some(function.as_str()) != entrypoint_function)
+    {
         let state = state.clone();
         let namespace = namespace.to_string();
-        tasks.spawn(async move {
+        tokio::spawn(async move {
             match load_service(&state, &namespace, &function).await {
                 Ok(service) => {
                     if let Some(snapshot) = state.runtime.prewarm(&service) {
@@ -206,11 +208,5 @@ async fn prewarm_workflow_functions(state: &AppState, namespace: &str, workflow:
                 }
             }
         });
-    }
-
-    while let Some(result) = tasks.join_next().await {
-        if let Err(error) = result {
-            tracing::warn!(error = %error, "workflow prewarm task failed");
-        }
     }
 }

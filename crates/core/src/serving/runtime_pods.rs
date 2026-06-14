@@ -12,7 +12,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::serving::runtime::runtime_key;
 use crate::state::{AppState, object_namespace};
@@ -348,9 +348,14 @@ async fn update_revision_status(
 
 // 冷启动等待上限，对齐 Knative revision timeoutSeconds 的默认值。
 const STARTUP_TIMEOUT_SECONDS: u64 = 300;
+const STARTUP_FAST_POLL: Duration = Duration::from_millis(100);
+const STARTUP_SLOW_POLL: Duration = Duration::from_millis(500);
+const STARTUP_FAST_POLL_WINDOW: Duration = Duration::from_secs(10);
 
 async fn ensure_ready_service_pod(state: &AppState, service: &ServerlessService) -> Result<Pod> {
-    for _ in 0..STARTUP_TIMEOUT_SECONDS * 2 {
+    let started_at = Instant::now();
+    let deadline = started_at + Duration::from_secs(STARTUP_TIMEOUT_SECONDS);
+    loop {
         let mut pods = ready_service_pods(state, service).await?;
         if !pods.is_empty() {
             let index = pod_pick_index(pods.len());
@@ -361,7 +366,15 @@ async fn ensure_ready_service_pod(state: &AppState, service: &ServerlessService)
                 }
             }
         }
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        if Instant::now() >= deadline {
+            break;
+        }
+        let poll_interval = if started_at.elapsed() < STARTUP_FAST_POLL_WINDOW {
+            STARTUP_FAST_POLL
+        } else {
+            STARTUP_SLOW_POLL
+        };
+        tokio::time::sleep(poll_interval).await;
     }
     Err(anyhow!(
         "timed out waiting for ServerlessService {}/{} pod after {STARTUP_TIMEOUT_SECONDS}s",
