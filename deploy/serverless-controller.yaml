@@ -33,8 +33,7 @@ metadata:
 spec:
   type: NodePort
   selector:
-    matchLabels:
-      component: serverless-controller
+    component: serverless-controller
   ports:
     - name: http
       port: 8082
