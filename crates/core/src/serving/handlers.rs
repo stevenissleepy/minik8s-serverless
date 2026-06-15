@@ -9,7 +9,7 @@ use crate::http::{HttpResult, api_error, decode_json_body};
 use crate::serving::runtime::{RuntimeSnapshot, runtime_key};
 use crate::serving::runtime_pods::invoke_service_pod;
 use crate::serving::workflow::{
-    WorkflowInvokeResponse, WorkflowTraceEntry, next_step, reachable_functions,
+    WorkflowInvokeResponse, WorkflowTraceEntry, next_step, primary_path_functions,
 };
 use crate::state::{AppState, load_service, load_workflow, object_namespace};
 use crate::status::{
@@ -155,7 +155,10 @@ async fn invoke_loaded_workflow(
             output: value.clone(),
         });
         match next_step(step, &value) {
-            Some(next) => current = next,
+            Some(next) => {
+                prewarm_workflow_path(state, namespace, &workflow, &next, None);
+                current = next;
+            }
             None => {
                 patch_workflow_status(state, &workflow, None).await;
                 return Ok(WorkflowInvokeResponse {
@@ -177,10 +180,26 @@ fn prewarm_workflow_functions(state: &AppState, namespace: &str, workflow: &Work
         .steps
         .get(&workflow.spec.entrypoint)
         .map(|step| step.function.as_str());
-    let functions = reachable_functions(workflow);
+    prewarm_workflow_path(
+        state,
+        namespace,
+        workflow,
+        &workflow.spec.entrypoint,
+        entrypoint_function,
+    );
+}
+
+fn prewarm_workflow_path(
+    state: &AppState,
+    namespace: &str,
+    workflow: &Workflow,
+    start_step: &str,
+    exclude_function: Option<&str>,
+) {
+    let functions = primary_path_functions(workflow, start_step);
     for function in functions
         .into_iter()
-        .filter(|function| Some(function.as_str()) != entrypoint_function)
+        .filter(|function| Some(function.as_str()) != exclude_function)
     {
         let state = state.clone();
         let namespace = namespace.to_string();

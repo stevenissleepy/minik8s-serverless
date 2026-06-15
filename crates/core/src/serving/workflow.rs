@@ -45,7 +45,8 @@ fn branch_matches(condition: &BranchCondition, output: &Value) -> bool {
     condition.equals.is_none() && condition.contains.is_none()
 }
 
-pub(crate) fn reachable_functions(workflow: &Workflow) -> Vec<String> {
+#[cfg(test)]
+fn reachable_functions(workflow: &Workflow) -> Vec<String> {
     let mut visited_steps = BTreeSet::new();
     let mut functions = BTreeSet::new();
     let mut pending = vec![workflow.spec.entrypoint.clone()];
@@ -69,6 +70,28 @@ pub(crate) fn reachable_functions(workflow: &Workflow) -> Vec<String> {
     }
 
     functions.into_iter().collect()
+}
+
+pub(crate) fn primary_path_functions(workflow: &Workflow, start_step: &str) -> Vec<String> {
+    let mut visited_steps = BTreeSet::new();
+    let mut seen_functions = BTreeSet::new();
+    let mut functions = Vec::new();
+    let mut current = Some(start_step.to_string());
+
+    while let Some(step_name) = current {
+        if !visited_steps.insert(step_name.clone()) {
+            break;
+        }
+        let Some(step) = workflow.spec.steps.get(&step_name) else {
+            break;
+        };
+        if !step.function.trim().is_empty() && seen_functions.insert(step.function.clone()) {
+            functions.push(step.function.clone());
+        }
+        current = step.next.clone();
+    }
+
+    functions
 }
 
 fn select_json_field<'a>(value: &'a Value, field: &str) -> Option<&'a Value> {
