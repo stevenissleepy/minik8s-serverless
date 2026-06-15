@@ -198,10 +198,11 @@ Workflow 如下：
 CONTROL_PLANE=<control-plane-ip>
 REGISTRY=stevenissleepy
 
-# deploy 五个 container
+# deploy 五个 container；ticket-classify 和 notify 是当前冷启动较慢的两个函数，
+# 这里使用 Rust 版本替代，其余三个仍使用 Python。
 rm -rf ticket-classify
-kn func create -l python ticket-classify
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/ticket_classify.py ticket-classify/function/func.py
+kn func create -l rust ticket-classify
+cp crates/plugin/serverless/examples/exp-ticket-support/functions/ticket_classify.rs ticket-classify/src/function.rs
 kn func deploy ticket-classify --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
 
 rm -rf risk-score
@@ -220,8 +221,8 @@ cp crates/plugin/serverless/examples/exp-ticket-support/functions/human_escalate
 kn func deploy human-escalate --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
 
 rm -rf notify
-kn func create -l python notify
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/notify.py notify/function/func.py
+kn func create -l rust notify
+cp crates/plugin/serverless/examples/exp-ticket-support/functions/notify.rs notify/src/function.rs
 kn func deploy notify --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
 
 # 创建 workflow

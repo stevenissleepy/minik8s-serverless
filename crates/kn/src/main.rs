@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow, bail};
 use apimachinery::{DEFAULT_NAMESPACE, ObjectMeta, TypeMeta};
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
 use client_rs::{Client, TypedApi};
 use serde::{Deserialize, Serialize};
 use serverless_api::{
@@ -11,6 +11,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+mod runtime;
+
+use runtime::FunctionRuntime;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about = "Minik8s Knative-like CLI")]
@@ -62,6 +66,10 @@ struct DeployFuncArgs {
     api_server: Option<String>,
     #[arg(long, default_value_t = true)]
     push: bool,
+    #[arg(long = "no-push", action = ArgAction::SetTrue)]
+    no_push: bool,
+    #[arg(long = "no-deploy", action = ArgAction::SetTrue)]
+    no_deploy: bool,
     #[arg(default_value = ".")]
     path: PathBuf,
 }
@@ -100,28 +108,28 @@ struct CreateServiceArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct FuncConfig {
-    name: String,
+pub(crate) struct FuncConfig {
+    pub(crate) name: String,
     #[serde(default = "default_runtime")]
-    runtime: String,
+    pub(crate) runtime: String,
     #[serde(default = "default_port")]
-    port: u16,
+    pub(crate) port: u16,
     #[serde(default)]
-    env: BTreeMap<String, String>,
+    pub(crate) env: BTreeMap<String, String>,
     #[serde(default)]
-    scale: FuncScale,
+    pub(crate) scale: FuncScale,
     #[serde(default)]
-    concurrency: FuncConcurrency,
+    pub(crate) concurrency: FuncConcurrency,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct FuncScale {
+pub(crate) struct FuncScale {
     #[serde(rename = "minScale", default)]
-    min_scale: u32,
+    pub(crate) min_scale: u32,
     #[serde(rename = "maxScale", default = "default_max_scale")]
-    max_scale: u32,
+    pub(crate) max_scale: u32,
     #[serde(rename = "idleSeconds", default = "default_idle_seconds")]
-    idle_seconds: u64,
+    pub(crate) idle_seconds: u64,
 }
 
 impl Default for FuncScale {
@@ -135,9 +143,9 @@ impl Default for FuncScale {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct FuncConcurrency {
+pub(crate) struct FuncConcurrency {
     #[serde(default = "default_target_concurrency")]
-    target: u32,
+    pub(crate) target: u32,
 }
 
 impl Default for FuncConcurrency {
@@ -169,51 +177,24 @@ async fn run() -> Result<()> {
 }
 
 fn create_function(args: CreateFuncArgs) -> Result<()> {
-    if args.language.to_ascii_lowercase() != "python" {
-        bail!("only python functions are currently supported");
-    }
+    let runtime = FunctionRuntime::from_language(&args.language)?;
     let dir = PathBuf::from(&args.name);
     if dir.exists() {
         bail!("{} already exists", dir.display());
     }
     fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
-    fs::create_dir_all(dir.join("function")).with_context(|| "failed to create function/")?;
-    fs::create_dir_all(dir.join("tests")).with_context(|| "failed to create tests/")?;
-    fs::write(dir.join("function").join("__init__.py"), "")
-        .with_context(|| "failed to write function/__init__.py")?;
-    fs::write(
-        dir.join("function").join("func.py"),
-        python_template(&args.name),
-    )
-    .with_context(|| "failed to write function/func.py")?;
-    fs::write(
-        dir.join("tests").join("test_func.py"),
-        python_test_template(),
-    )
-    .with_context(|| "failed to write tests/test_func.py")?;
-    fs::write(dir.join("function").join("app.py"), python_app_template())
-        .with_context(|| "failed to write function/app.py")?;
-    fs::write(dir.join("requirements.txt"), "")
-        .with_context(|| "failed to write requirements.txt")?;
-    fs::write(dir.join("Dockerfile"), python_dockerfile(default_port()))
-        .with_context(|| "failed to write Dockerfile")?;
-    fs::write(dir.join("pyproject.toml"), python_pyproject(&args.name))
-        .with_context(|| "failed to write pyproject.toml")?;
-    let config = FuncConfig {
-        name: args.name.clone(),
-        runtime: "python".to_string(),
-        port: default_port(),
-        env: BTreeMap::new(),
-        scale: FuncScale::default(),
-        concurrency: FuncConcurrency::default(),
-    };
-    fs::write(dir.join("func.yaml"), serde_yaml::to_string(&config)?)
-        .with_context(|| "failed to write func.yaml")?;
-    println!("created python function template {}", dir.display());
+    runtime.create(&dir, &args.name)?;
+    println!(
+        "created {} function template {}",
+        runtime.name(),
+        dir.display()
+    );
     Ok(())
 }
 
 async fn deploy_function(args: DeployFuncArgs) -> Result<()> {
+    let push = args.push && !args.no_push;
+    let deploy = !args.no_deploy;
     let source_dir = args.path.canonicalize().with_context(|| {
         format!(
             "failed to resolve function directory {}",
@@ -227,9 +208,7 @@ async fn deploy_function(args: DeployFuncArgs) -> Result<()> {
     if let Some(name) = args.name {
         config.name = name;
     }
-    if config.runtime.to_ascii_lowercase() != "python" {
-        bail!("only python functions are currently supported");
-    }
+    let runtime = FunctionRuntime::from_config(&config.runtime)?;
     let image = match args.image {
         Some(image) => image,
         None => {
@@ -241,12 +220,16 @@ async fn deploy_function(args: DeployFuncArgs) -> Result<()> {
         }
     };
 
-    build_python_function_image(&source_dir, &config, &image)?;
-    if args.push {
+    runtime.build_image(&source_dir, &config, &image)?;
+    if push {
         run_command(
             Command::new("docker").arg("push").arg(&image),
             "docker push",
         )?;
+    }
+    if !deploy {
+        println!("function image {} built", image);
+        return Ok(());
     }
 
     let namespace = args.namespace.as_deref().unwrap_or(DEFAULT_NAMESPACE);
@@ -358,31 +341,7 @@ fn read_func_config(source_dir: &Path) -> Result<FuncConfig> {
     })
 }
 
-fn build_python_function_image(source_dir: &Path, config: &FuncConfig, image: &str) -> Result<()> {
-    if !source_dir.join("function").join("func.py").exists() {
-        bail!("{} is missing function/func.py", source_dir.display());
-    }
-    if !source_dir.join("function").join("app.py").exists() {
-        bail!("{} is missing function/app.py", source_dir.display());
-    }
-    if !source_dir.join("Dockerfile").exists() {
-        bail!("{} is missing Dockerfile", source_dir.display());
-    }
-    let context_dir = build_context_dir(&config.name)?;
-    copy_dir(source_dir, &context_dir)?;
-    let result = run_command(
-        Command::new("docker")
-            .arg("build")
-            .arg("-t")
-            .arg(image)
-            .arg(&context_dir),
-        "docker build",
-    );
-    let _ = fs::remove_dir_all(&context_dir);
-    result
-}
-
-fn build_context_dir(name: &str) -> Result<PathBuf> {
+pub(crate) fn build_context_dir(name: &str) -> Result<PathBuf> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -392,7 +351,7 @@ fn build_context_dir(name: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
+pub(crate) fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
     for entry in fs::read_dir(src).with_context(|| format!("failed to read {}", src.display()))? {
         let entry = entry?;
         let src_path = entry.path();
@@ -419,7 +378,7 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-fn run_command(command: &mut Command, description: &str) -> Result<()> {
+pub(crate) fn run_command(command: &mut Command, description: &str) -> Result<()> {
     let status = command
         .status()
         .with_context(|| format!("failed to start {description}"))?;
@@ -450,206 +409,22 @@ fn client(api_server: Option<&str>) -> Result<Client> {
     }
 }
 
-fn python_template(name: &str) -> String {
-    format!(
-        r#"import json
-
-
-def new():
-    return Function()
-
-
-class Function:
-    async def handle(self, scope, receive, send):
-        message = await receive()
-        body = message.get("body", b"")
-        event = json.loads(body.decode("utf-8")) if body.strip() else None
-        result = {{"function": "{name}", "event": event}}
-        payload = json.dumps(result).encode("utf-8")
-        await send({{
-            "type": "http.response.start",
-            "status": 200,
-            "headers": [[b"content-type", b"application/json"]],
-        }})
-        await send({{
-            "type": "http.response.body",
-            "body": payload,
-        }})
-
-    def alive(self):
-        return True, "alive"
-
-    def ready(self):
-        return True, "ready"
-"#
-    )
-}
-
-fn python_test_template() -> &'static str {
-    r#"from function.func import new
-
-
-def test_new():
-    assert new() is not None
-"#
-}
-
-fn python_app_template() -> &'static str {
-    r#"import asyncio
-import json
-import os
-import traceback
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-from function.func import new
-
-
-PORT = int(os.environ.get("PORT", "8080"))
-
-
-async def call_function(function, method, path, headers, body):
-    response = {
-        "status": 200,
-        "headers": [(b"content-type", b"application/json")],
-        "body": bytearray(),
-    }
-    received = False
-
-    async def receive():
-        nonlocal received
-        if received:
-            return {"type": "http.disconnect"}
-        received = True
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    async def send(message):
-        if message["type"] == "http.response.start":
-            response["status"] = int(message.get("status", 200))
-            response["headers"] = message.get("headers", [])
-        elif message["type"] == "http.response.body":
-            response["body"].extend(message.get("body", b""))
-
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": method,
-        "scheme": "http",
-        "path": "/" if path == "/invoke" else path,
-        "raw_path": path.encode("utf-8"),
-        "query_string": b"",
-        "headers": headers,
-        "server": ("0.0.0.0", PORT),
-        "client": ("0.0.0.0", 0),
-        "minik8s": {
-            "namespace": os.environ.get("FUNCTION_NAMESPACE", "default"),
-            "name": os.environ.get("FUNCTION_NAME", ""),
-        },
-    }
-    result = function.handle(scope, receive, send)
-    if asyncio.iscoroutine(result):
-        await result
-    return response
-
-
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path in ("/healthz", "/health/liveness", "/health/readiness"):
-            self.send_json({"ok": True})
-            return
-        self.forward()
-
-    def do_POST(self):
-        self.forward()
-
-    def forward(self):
-        length = int(self.headers.get("content-length", "0"))
-        body = self.rfile.read(length) if length else b""
-        headers = [
-            (key.lower().encode("latin-1"), value.encode("latin-1"))
-            for key, value in self.headers.items()
-        ]
-        try:
-            response = asyncio.run(
-                call_function(self.server.function, self.command, self.path, headers, body)
-            )
-            self.send_response(response["status"])
-            payload = bytes(response["body"])
-            has_length = False
-            for name, value in response["headers"]:
-                header = name.decode("latin-1")
-                if header.lower() == "content-length":
-                    has_length = True
-                self.send_header(header, value.decode("latin-1"))
-            if not has_length:
-                self.send_header("content-length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-        except Exception as exc:
-            self.send_json({"error": str(exc), "traceback": traceback.format_exc()}, status=500)
-
-    def send_json(self, value, status=200):
-        payload = json.dumps(value).encode("utf-8")
-        self.send_response(status)
-        self.send_header("content-type", "application/json")
-        self.send_header("content-length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def log_message(self, format, *args):
-        return
-
-
-def main():
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    server.function = new()
-    server.serve_forever()
-
-
-if __name__ == "__main__":
-    main()
-"#
-}
-
-fn python_pyproject(name: &str) -> String {
-    format!(
-        r#"[project]
-name = "{name}"
-version = "0.1.0"
-requires-python = ">=3.12"
-"#
-    )
-}
-
-fn python_dockerfile(port: u16) -> String {
-    format!(
-        r#"FROM python:3.12-slim
-WORKDIR /workspace
-COPY . /workspace
-RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi
-ENV PORT={port}
-EXPOSE {port}
-CMD ["python", "-m", "function.app"]
-"#
-    )
-}
-
-fn default_runtime() -> String {
+pub(crate) fn default_runtime() -> String {
     "python".to_string()
 }
 
-fn default_port() -> u16 {
+pub(crate) fn default_port() -> u16 {
     8080
 }
 
-fn default_target_concurrency() -> u32 {
+pub(crate) fn default_target_concurrency() -> u32 {
     10
 }
 
-fn default_max_scale() -> u32 {
+pub(crate) fn default_max_scale() -> u32 {
     10
 }
 
-fn default_idle_seconds() -> u64 {
+pub(crate) fn default_idle_seconds() -> u64 {
     60
 }

@@ -26,12 +26,22 @@ kubectl apply -f crates/plugin/serverless/deploy/serverless-core.yaml
 
 也就是说，apply 多个文件不是为了“多启动几个程序”，而是在给 apiserver 注册新的资源类型，并启动 serverless-controller/serverless-activator 两个职责不同的组件。当前核心组件是 2 个 Pod、2 个 container、2 个 image：`stevenissleepy/serverless-controller:latest` 只包含 controller 二进制，`stevenissleepy/serverless-activator:latest` 只包含 activator 二进制。没有 CRD，apiserver 不认识 `ServerlessService`；没有 serverless-controller，资源只会存在 etcd 里，不会真的创建函数 Pod；没有 serverless-activator，请求入口和冷启动流量承接不存在。
 
-## 从 Python 源码部署
+## 从源码部署
 
 ```sh
 kn func create -l python hello
 cd hello
 # 修改 function/func.py；生成的 Dockerfile 会运行 function/app.py
+kn func deploy --registry ghcr.io/myname --api-server http://127.0.0.1:8080
+```
+
+Rust 函数使用同一套 Function 流程：
+
+```sh
+kn func create -l rust hello-rs
+cd hello-rs
+# 修改 src/function.rs；kn deploy 会先本地构建静态 musl 二进制，再生成 scratch 运行镜像
+# 首次使用前需要安装对应 target，例如：rustup target add x86_64-unknown-linux-musl
 kn func deploy --registry ghcr.io/myname --api-server http://127.0.0.1:8080
 ```
 
