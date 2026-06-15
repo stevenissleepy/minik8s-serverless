@@ -198,8 +198,7 @@ Workflow 如下：
 CONTROL_PLANE=<control-plane-ip>
 REGISTRY=stevenissleepy
 
-# deploy 五个 container；ticket-classify 和 notify 是当前冷启动较慢的两个函数，
-# 这里使用 Rust 版本替代，其余三个仍使用 Python。
+# deploy 五个 container
 rm -rf ticket-classify
 kn func create -l rust ticket-classify
 cp crates/plugin/serverless/examples/exp-ticket-support/functions/ticket_classify.rs ticket-classify/src/function.rs
@@ -211,13 +210,13 @@ cp crates/plugin/serverless/examples/exp-ticket-support/functions/risk_score.py 
 kn func deploy risk-score --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
 
 rm -rf auto-reply
-kn func create -l python auto-reply
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/auto_reply.py auto-reply/function/func.py
+kn func create -l rust auto-reply
+cp crates/plugin/serverless/examples/exp-ticket-support/functions/auto_reply.rs auto-reply/src/function.rs
 kn func deploy auto-reply --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
 
 rm -rf human-escalate
-kn func create -l python human-escalate
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/human_escalate.py human-escalate/function/func.py
+kn func create -l rust human-escalate
+cp crates/plugin/serverless/examples/exp-ticket-support/functions/human_escalate.rs human-escalate/src/function.rs
 kn func deploy human-escalate --registry "$REGISTRY" --api-server "http://$CONTROL_PLANE:8080"
 
 rm -rf notify
