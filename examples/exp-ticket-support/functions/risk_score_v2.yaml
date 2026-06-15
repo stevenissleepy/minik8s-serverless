@@ -1,0 +1,10 @@
+name: risk-score
+runtime: python
+port: 8080
+env: {}
+scale:
+  minScale: 0
+  maxScale: 4
+  idleSeconds: 60
+concurrency:
+  target: 1

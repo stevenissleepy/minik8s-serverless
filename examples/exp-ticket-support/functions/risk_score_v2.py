@@ -12,30 +12,15 @@ class Function:
         message = await receive()
         body = message.get("body", b"")
         event = json.loads(body.decode("utf-8")) if body.strip() else {}
-        text = str(event.get("text", "")).lower()
-        category = event.get("category", "general")
-        user_level = event.get("user_level", "normal")
         sleep_ms = int(event.get("sleep_ms", 0) or 0)
         if sleep_ms > 0:
             time.sleep(sleep_ms / 1000)
 
-        risk = 25
-        if user_level == "vip":
-            risk += 15
-        if category == "refund":
-            risk += 25
-        if category == "complaint":
-            risk += 30
-        for word in ["broken", "urgent", "angry", "terrible", "security", "leak"]:
-            if word in text:
-                risk += 15
-        risk = min(risk, 100)
-
         result = {
             **event,
-            "risk": risk,
-            "risk_level": "high" if risk >= 80 else "normal",
-            "decision": "human" if risk >= 80 else "auto",
+            "risk": 100,
+            "risk_level": "high",
+            "decision": "human",
             "model_version": "risk-v2",
             "instance": socket.gethostname(),
             "scored_by": scope["minik8s"]["name"],
