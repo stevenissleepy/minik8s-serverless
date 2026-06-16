@@ -54,6 +54,26 @@ spec:
     - name: v1alpha1
       served: true
       storage: true
+      additionalPrinterColumns:
+        - name: SERVICE
+          type: string
+          description: ServerlessService that owns this revision
+          jsonPath: .spec.serviceName
+        - name: READY
+          type: boolean
+          description: Whether this revision currently has ready runtime pods
+          jsonPath: .status.ready
+        - name: IMAGE
+          type: string
+          description: Container image used by this revision
+          jsonPath: .spec.image
+        - name: PORT
+          type: integer
+          description: Runtime container port
+          jsonPath: .spec.port
+        - name: AGE
+          type: date
+          jsonPath: .metadata.creationTimestamp
       subresources:
         status: {}
 
