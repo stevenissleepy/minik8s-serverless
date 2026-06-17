@@ -19,7 +19,7 @@ spec:
       command:
         - serverless-controller
       args:
-        - --api-server=http://127.0.0.1:8080
+        - --api-server=$(MINIK8S_APISERVER)
         - --bind=0.0.0.0:8083
         - --reconcile-secs=1
       ports:
@@ -47,7 +47,7 @@ spec:
       command:
         - serverless-activator
       args:
-        - --api-server=http://127.0.0.1:8080
+        - --api-server=$(MINIK8S_APISERVER)
         - --bind=0.0.0.0:8082
       ports:
         - containerPort: 8082
