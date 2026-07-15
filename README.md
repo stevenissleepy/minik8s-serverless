@@ -1,5 +1,13 @@
 # Minik8s Serverless
 
+这是一个独立的 Minik8s 扩展仓库。Rust workspace 通过固定 Git commit 依赖
+Minik8s 的 API、客户端和基础类型，因此不要求与 Minik8s 源码放在相邻目录。
+
+```sh
+cargo build --workspace
+cargo test --workspace
+```
+
 这个插件采用一个简化版 Knative-like 结构：
 
 - Function 层：`kn func create/deploy` 面向本地源码，负责创建函数模板、构建每个函数自己的 OCI image、push image，然后通过 apiserver 提交 `ServerlessService`。
@@ -10,13 +18,13 @@
 Serverless 插件需要先注册 CRD，再启动 serverless-controller 和 serverless-activator：
 
 ```sh
-kubectl apply -f crates/plugin/serverless/deploy/serverless-crds.yaml
-kubectl apply -f crates/plugin/serverless/deploy/serverless-core.yaml
+kubectl apply -f deploy/serverless-crds.yaml
+kubectl apply -f deploy/serverless-core.yaml
 ```
 
 这些文件的作用是：
 
-- `crates/plugin/serverless/deploy/serverless-crds.yaml`：注册 Serverless 插件用到的 CRD，包括 `ServerlessService`、`Revision`、`EventTrigger`、`EventSource` 和 `Workflow`。
+- `deploy/serverless-crds.yaml`：注册 Serverless 插件用到的 CRD，包括 `ServerlessService`、`Revision`、`EventTrigger`、`EventSource` 和 `Workflow`。
 - `ServerlessService` 描述一个 serverless 服务，例如 image、port、环境变量、扩缩容配置。
 - `Revision` 记录某次 image/template 对应的版本。
 - `EventTrigger` 用于把事件源绑定到函数或 workflow。

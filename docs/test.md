@@ -13,8 +13,8 @@ kubectl get nodes -o wide
 
 ```sh
 kubectl apply -f deploy/addons/kube-flannel.yaml
-kubectl apply -f crates/plugin/serverless/deploy/serverless-crds.yaml
-kubectl apply -f crates/plugin/serverless/deploy/serverless-core.yaml
+kubectl apply -f deploy/serverless-crds.yaml
+kubectl apply -f deploy/serverless-core.yaml
 ```
 
 确认插件启动成功：
@@ -42,7 +42,7 @@ kn service create sentiment-it \
   --api-server http://localhost:8080
 ```
 
-对应的 YAML 示例在 `crates/plugin/serverless/examples/exp-sentiment/sentiment.yaml`。
+对应的 YAML 示例在 `examples/exp-sentiment/sentiment.yaml`。
 
 调用函数：
 
@@ -76,7 +76,7 @@ Function 层从本地 Python 函数目录上传函数。这里固定使用
 ```sh
 rm -rf sentiment-it
 kn func create -l python sentiment-it
-cp crates/plugin/serverless/examples/exp-sentiment/sentiment.py sentiment-it/function/func.py
+cp examples/exp-sentiment/sentiment.py sentiment-it/function/func.py
 kn func deploy sentiment-it --registry stevenissleepy --api-server http://localhost:8080
 ```
 
@@ -106,7 +106,7 @@ kubectl get pods -A -o wide
 
 rm -rf sentiment-it
 kn func create -l python sentiment-it
-cp crates/plugin/serverless/examples/exp-sentiment/sentiment.py sentiment-it/function/func.py
+cp examples/exp-sentiment/sentiment.py sentiment-it/function/func.py
 kn func deploy sentiment-it --registry stevenissleepy --api-server http://localhost:8080
 
 curl -s http://localhost:30082/api/v1/namespaces/default/services/sentiment-it/invoke \
@@ -137,7 +137,7 @@ kubectl get pods -l serverless.minik8s.io/service=sentiment-it -o wide
 ## 复杂应用
 
 复杂应用使用“智能客服工单处理系统”，相关代码放在
-`crates/plugin/serverless/examples/exp-ticket-support/`。
+`examples/exp-ticket-support/`。
 
 应用包含 5 个函数：
 
@@ -190,32 +190,32 @@ Workflow 如下：
 # deploy 五个 container
 rm -rf ticket-classify
 kn func create -l rust ticket-classify
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/ticket_classify.rs ticket-classify/src/function.rs
+cp examples/exp-ticket-support/functions/ticket_classify.rs ticket-classify/src/function.rs
 kn func deploy ticket-classify --registry stevenissleepy --api-server http://localhost:8080
 
 rm -rf risk-score
 kn func create -l python risk-score
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/risk_score.py risk-score/function/func.py
+cp examples/exp-ticket-support/functions/risk_score.py risk-score/function/func.py
 kn func deploy risk-score --registry stevenissleepy --api-server http://localhost:8080
 
 rm -rf auto-reply
 kn func create -l rust auto-reply
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/auto_reply.rs auto-reply/src/function.rs
+cp examples/exp-ticket-support/functions/auto_reply.rs auto-reply/src/function.rs
 kn func deploy auto-reply --registry stevenissleepy --api-server http://localhost:8080
 
 rm -rf human-escalate
 kn func create -l rust human-escalate
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/human_escalate.rs human-escalate/src/function.rs
+cp examples/exp-ticket-support/functions/human_escalate.rs human-escalate/src/function.rs
 kn func deploy human-escalate --registry stevenissleepy --api-server http://localhost:8080
 
 rm -rf notify
 kn func create -l rust notify
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/notify.rs notify/src/function.rs
+cp examples/exp-ticket-support/functions/notify.rs notify/src/function.rs
 kn func deploy notify --registry stevenissleepy --api-server http://localhost:8080
 
 # 创建 workflow
-kubectl apply -f crates/plugin/serverless/examples/exp-ticket-support/workflow.yaml
-kubectl apply -f crates/plugin/serverless/examples/exp-ticket-support/event-trigger.yaml
+kubectl apply -f examples/exp-ticket-support/workflow.yaml
+kubectl apply -f examples/exp-ticket-support/event-trigger.yaml
 kubectl get serverlessservices
 kubectl get workflows
 kubectl get eventtriggers
@@ -253,12 +253,12 @@ curl -s "http://localhost:30082/api/v1/namespaces/default/services/risk-score/in
 ```
 
 将复杂应用中的 `risk-score` 更新为 v2。v2 示例代码放在
-`crates/plugin/serverless/examples/exp-ticket-support/functions/risk_score_v2.py`。
+`examples/exp-ticket-support/functions/risk_score_v2.py`。
 它会固定返回 `risk: 100`，同时返回 `model_version` 和 `instance`，并支持 `sleep_ms` 参数。
 
 ```sh
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/risk_score_v2.py risk-score/function/func.py
-cp crates/plugin/serverless/examples/exp-ticket-support/functions/risk_score_v2.yaml risk-score/func.yaml
+cp examples/exp-ticket-support/functions/risk_score_v2.py risk-score/function/func.py
+cp examples/exp-ticket-support/functions/risk_score_v2.yaml risk-score/func.yaml
 
 kn func deploy risk-score \
   --image stevenissleepy/risk-score:v2 \

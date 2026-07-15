@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-cd "$(dirname "$0")/../../../.."
+cd "$(dirname "$0")/.."
 
 controller_image_ref="${CONTROLLER_IMAGE_REF:-stevenissleepy/serverless-controller:latest}"
 activator_image_ref="${ACTIVATOR_IMAGE_REF:-stevenissleepy/serverless-activator:latest}"
