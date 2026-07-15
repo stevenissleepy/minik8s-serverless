@@ -1,0 +1,109 @@
+name: release-images
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  REGISTRY: ghcr.io
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release-images:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Image Tags
+        id: resolve
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          {
+            echo "owner=${owner}"
+            echo "version_tag=${GITHUB_REF_NAME}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Build Release Binaries
+        run: |
+          cargo build --locked --release \
+            -p serverless-controller \
+            -p serverless-activator
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push serverless-controller Image
+        shell: bash
+        env:
+          OWNER: ${{ steps.resolve.outputs.owner }}
+          VERSION_TAG: ${{ steps.resolve.outputs.version_tag }}
+        run: |
+          set -euo pipefail
+          context="target/image-contexts/serverless-controller"
+          ref="${REGISTRY}/${OWNER}/serverless-controller"
+
+          rm -rf "${context}"
+          mkdir -p "${context}"
+          install -m 0755 target/release/serverless-controller "${context}/serverless-controller"
+
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${VERSION_TAG}" \
+            -t "${ref}:${VERSION_TAG}" \
+            -t "${ref}:latest" \
+            -f- "${context}" <<'DOCKERFILE'
+          FROM ubuntu:24.04
+          COPY serverless-controller /usr/local/bin/serverless-controller
+          ENTRYPOINT ["/usr/local/bin/serverless-controller"]
+          DOCKERFILE
+
+          docker push "${ref}:${VERSION_TAG}"
+          docker push "${ref}:latest"
+
+      - name: Build and Push serverless-activator Image
+        shell: bash
+        env:
+          OWNER: ${{ steps.resolve.outputs.owner }}
+          VERSION_TAG: ${{ steps.resolve.outputs.version_tag }}
+        run: |
+          set -euo pipefail
+          context="target/image-contexts/serverless-activator"
+          ref="${REGISTRY}/${OWNER}/serverless-activator"
+
+          rm -rf "${context}"
+          mkdir -p "${context}"
+          install -m 0755 target/release/serverless-activator "${context}/serverless-activator"
+
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${VERSION_TAG}" \
+            -t "${ref}:${VERSION_TAG}" \
+            -t "${ref}:latest" \
+            -f- "${context}" <<'DOCKERFILE'
+          FROM ubuntu:24.04
+          COPY serverless-activator /usr/local/bin/serverless-activator
+          ENTRYPOINT ["/usr/local/bin/serverless-activator"]
+          DOCKERFILE
+
+          docker push "${ref}:${VERSION_TAG}"
+          docker push "${ref}:latest"
