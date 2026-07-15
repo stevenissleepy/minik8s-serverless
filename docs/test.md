@@ -37,7 +37,7 @@ Serving 层直接使用已有镜像，不经过 Function 层。
 
 ```sh
 kn service create sentiment-it \
-  --image ghcr.io/stevenissleepy/sentiment-it:latest \
+  --image stevenissleepy/sentiment-it:latest \
   --port 8080 \
   --api-server http://localhost:8080
 ```
@@ -71,7 +71,7 @@ curl -s http://localhost:30082/api/v1/namespaces/default/services/sentiment-it/s
 ## Function 层
 
 Function 层从本地 Python 函数目录上传函数。这里固定使用
-`ghcr.io/stevenissleepy/sentiment-it:latest` 镜像。
+`stevenissleepy/sentiment-it:latest` 镜像。
 
 ```sh
 rm -rf sentiment-it
@@ -92,7 +92,7 @@ curl -s http://localhost:8080/apis/serverless.minik8s.io/v1alpha1/namespaces/def
 
 - `kn func create -l python` 能创建 Python 函数模板。
 - `kn func deploy` 创建或更新 `ServerlessService/sentiment-it`。
-- `ServerlessService/sentiment-it` 的 `spec.image` 是 `ghcr.io/stevenissleepy/sentiment-it:latest`。
+- `ServerlessService/sentiment-it` 的 `spec.image` 是 `stevenissleepy/sentiment-it:latest`。
 
 ## 集成测试
 
@@ -129,7 +129,7 @@ kubectl get pods -l serverless.minik8s.io/service=sentiment-it -o wide
 
 - 三个 Node、Flannel、kube-proxy、`serverless-controller` 和 `serverless-activator` 都是 Running。
 - `kn func deploy` 创建或更新 `ServerlessService/sentiment-it`。
-- `ServerlessService/sentiment-it` 的 `spec.image` 是 `ghcr.io/stevenissleepy/sentiment-it:latest`。
+- `ServerlessService/sentiment-it` 的 `spec.image` 是 `stevenissleepy/sentiment-it:latest`。
 - invoke 返回 JSON，且 `.result.label` 为 `positive`。
 - serverless-controller 创建了 `Revision/sentiment-it-*`、`Service/sks-sentiment-it` 和 runtime Pod，serverless-activator 负责请求承接和冷启动等待。
 - 等待 `idleSeconds` 后，`state.runtime.active_instances` 回到 0，对应 runtime Pod 被删除。

@@ -4,7 +4,7 @@ metadata:
   name: sentiment-it
   namespace: default
 spec:
-  image: ghcr.io/stevenissleepy/sentiment-it:latest
+  image: stevenissleepy/sentiment-it:latest
   port: 8080
   concurrency:
     target: 8
