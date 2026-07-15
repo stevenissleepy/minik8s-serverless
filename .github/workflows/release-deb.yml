@@ -31,7 +31,7 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           version="$(awk -F\" '/^version = / { print $2; exit }' crates/kn/Cargo.toml)"
           arch="$(dpkg --print-architecture)"
-          asset_prefix="${GITHUB_REPOSITORY#*/}-${tag}-linux-${arch}"
+          asset_prefix="kn-${tag}-linux-${arch}"
           {
             echo "tag=$tag"
             echo "version=$version"
@@ -50,7 +50,7 @@ jobs:
 
           version="${{ steps.release.outputs.version }}"
           arch="${{ steps.release.outputs.arch }}"
-          package="minik8s-serverless"
+          package="kn"
           build_dir="target/deb"
           package_root="${build_dir}/${package}"
           deb_path="${build_dir}/${package}_${version}_${arch}.deb"
@@ -72,9 +72,9 @@ jobs:
           Maintainer: Minik8s Maintainers <minik8s@example.invalid>
           Depends: libc6
           Installed-Size: ${installed_size}
-          Description: Serverless plugin for Minik8s
-           Minik8s Serverless provides the kn command-line client for building,
-           publishing and managing serverless functions on a Minik8s cluster.
+          Description: Serverless command-line client for Minik8s
+           The kn command-line client builds, publishes and manages serverless
+           functions on a Minik8s cluster.
           EOF
 
           dpkg-deb --build --root-owner-group "$package_root" "$deb_path"
@@ -83,15 +83,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p target/dist/minik8s-serverless
+          mkdir -p target/dist/kn
           install -m 0644 \
-            "target/deb/minik8s-serverless_${{ steps.release.outputs.version }}_${{ steps.release.outputs.arch }}.deb" \
+            "target/deb/kn_${{ steps.release.outputs.version }}_${{ steps.release.outputs.arch }}.deb" \
             "target/dist/${{ steps.release.outputs.asset_prefix }}.deb"
-          install -m 0755 target/release/kn target/dist/minik8s-serverless/kn
+          install -m 0755 target/release/kn target/dist/kn/kn
 
           tar -C target/dist \
             -czf "target/dist/${{ steps.release.outputs.asset_prefix }}.tar.gz" \
-            minik8s-serverless
+            kn
 
       - name: Write Checksums
         shell: bash

@@ -14,7 +14,7 @@
 
 ```sh
 tag=v0.1.0
-deb="minik8s-serverless-${tag}-linux-amd64.deb"
+deb="kn-${tag}-linux-amd64.deb"
 curl -fLO "https://github.com/stevenissleepy/minik8s-serverless/releases/download/${tag}/${deb}"
 sudo apt install "./${deb}"
 ```
