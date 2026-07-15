@@ -15,7 +15,7 @@ spec:
       effect: NoSchedule
   containers:
     - name: serverless-controller
-      image: stevenissleepy/serverless-controller:latest
+      image: ghcr.io/stevenissleepy/serverless-controller:latest
       command:
         - serverless-controller
       args:
@@ -43,7 +43,7 @@ spec:
       effect: NoSchedule
   containers:
     - name: serverless-activator
-      image: stevenissleepy/serverless-activator:latest
+      image: ghcr.io/stevenissleepy/serverless-activator:latest
       command:
         - serverless-activator
       args:

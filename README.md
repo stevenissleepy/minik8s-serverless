@@ -32,7 +32,7 @@ kubectl apply -f deploy/serverless-core.yaml
 - `Workflow` 用于描述函数调用链和分支。
 - `serverless-core.yaml`：启动 `serverless-controller` 和 `serverless-activator`。serverless-controller watch 上面的资源并调谐 Revision、Pod、Service；serverless-activator 作为独立入口处理 invoke、冷启动等待、并发扩容意图和 scale-to-0。
 
-也就是说，apply 多个文件不是为了“多启动几个程序”，而是在给 apiserver 注册新的资源类型，并启动 serverless-controller/serverless-activator 两个职责不同的组件。当前核心组件是 2 个 Pod、2 个 container、2 个 image：`stevenissleepy/serverless-controller:latest` 只包含 controller 二进制，`stevenissleepy/serverless-activator:latest` 只包含 activator 二进制。没有 CRD，apiserver 不认识 `ServerlessService`；没有 serverless-controller，资源只会存在 etcd 里，不会真的创建函数 Pod；没有 serverless-activator，请求入口和冷启动流量承接不存在。
+也就是说，apply 多个文件不是为了“多启动几个程序”，而是在给 apiserver 注册新的资源类型，并启动 serverless-controller/serverless-activator 两个职责不同的组件。当前核心组件是 2 个 Pod、2 个 container、2 个 image：`ghcr.io/stevenissleepy/serverless-controller:latest` 只包含 controller 二进制，`ghcr.io/stevenissleepy/serverless-activator:latest` 只包含 activator 二进制。没有 CRD，apiserver 不认识 `ServerlessService`；没有 serverless-controller，资源只会存在 etcd 里，不会真的创建函数 Pod；没有 serverless-activator，请求入口和冷启动流量承接不存在。
 
 ## 从源码部署
 

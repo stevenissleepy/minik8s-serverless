@@ -3,8 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-controller_image_ref="${CONTROLLER_IMAGE_REF:-stevenissleepy/serverless-controller:latest}"
-activator_image_ref="${ACTIVATOR_IMAGE_REF:-stevenissleepy/serverless-activator:latest}"
+controller_image_ref="${CONTROLLER_IMAGE_REF:-ghcr.io/stevenissleepy/serverless-controller:latest}"
+activator_image_ref="${ACTIVATOR_IMAGE_REF:-ghcr.io/stevenissleepy/serverless-activator:latest}"
 
 cargo build --release -p serverless-controller -p serverless-activator --bins
 docker build -t "${controller_image_ref}" -f- . <<'DOCKERFILE'
