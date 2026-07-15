@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-api = { package = "api", git = "https://github.com/stevenissleepy/minik8s", rev = "a0ce705e1753615b4be06dee57aba1d2461ff5f4" }
-apimachinery = { git = "https://github.com/stevenissleepy/minik8s", rev = "a0ce705e1753615b4be06dee57aba1d2461ff5f4" }
-client-rs = { git = "https://github.com/stevenissleepy/minik8s", rev = "a0ce705e1753615b4be06dee57aba1d2461ff5f4" }
-logger = { git = "https://github.com/stevenissleepy/minik8s", rev = "a0ce705e1753615b4be06dee57aba1d2461ff5f4" }
+api = { package = "api", git = "https://github.com/stevenissleepy/minik8s", tag = "v0.1.0" }
+apimachinery = { git = "https://github.com/stevenissleepy/minik8s", tag = "v0.1.0" }
+client-rs = { git = "https://github.com/stevenissleepy/minik8s", tag = "v0.1.0" }
+logger = { git = "https://github.com/stevenissleepy/minik8s", tag = "v0.1.0" }
