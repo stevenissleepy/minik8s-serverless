@@ -79,7 +79,7 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 [[package]]
 name = "api"
 version = "0.1.0"
-source = "git+https://github.com/stevenissleepy/minik8s?tag=v0.1.0#2f2861f1d7f66a4bae8b754da48d8270a9d0e32b"
+source = "git+https://github.com/stevenissleepy/minik8s?tag=v0.1.0#aacd132425a3ba8350e3b2de88db0f4c55a59bfa"
 dependencies = [
  "anyhow",
  "apimachinery",
@@ -94,7 +94,7 @@ dependencies = [
 [[package]]
 name = "apimachinery"
 version = "0.1.0"
-source = "git+https://github.com/stevenissleepy/minik8s?tag=v0.1.0#2f2861f1d7f66a4bae8b754da48d8270a9d0e32b"
+source = "git+https://github.com/stevenissleepy/minik8s?tag=v0.1.0#aacd132425a3ba8350e3b2de88db0f4c55a59bfa"
 dependencies = [
  "anyhow",
  "chrono",
@@ -296,7 +296,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 [[package]]
 name = "client-rs"
 version = "0.1.0"
-source = "git+https://github.com/stevenissleepy/minik8s?tag=v0.1.0#2f2861f1d7f66a4bae8b754da48d8270a9d0e32b"
+source = "git+https://github.com/stevenissleepy/minik8s?tag=v0.1.0#aacd132425a3ba8350e3b2de88db0f4c55a59bfa"
 dependencies = [
  "api",
  "apimachinery",
@@ -853,7 +853,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 [[package]]
 name = "logger"
 version = "0.1.0"
-source = "git+https://github.com/stevenissleepy/minik8s?tag=v0.1.0#2f2861f1d7f66a4bae8b754da48d8270a9d0e32b"
+source = "git+https://github.com/stevenissleepy/minik8s?tag=v0.1.0#aacd132425a3ba8350e3b2de88db0f4c55a59bfa"
 dependencies = [
  "tracing-subscriber",
 ]
